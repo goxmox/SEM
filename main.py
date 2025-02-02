@@ -1,23 +1,56 @@
+from api.broker_list import t_invest
+from api.tinvest.tperiod import TPeriod
+from engine.schemas.enums import SessionPeriod
+from engine.strategies.trade_and_hold import TradeAndHold
+from engine.trading_interface import TradingInterface
+from api.tinvest.datatypes import AccountType
+from api.tinvest.set_token import set_token
+from datetime import datetime
 import pandas as pd
-import numpy as np
-#from client import Ticker
-#from client.models import Models, HAR_RV
-from timeit import default_timer as timer
+from engine.schemas.constants import log_path
+from engine.start_up import start_up
 
-shares = pd.read_csv('/Users/s/Desktop/segr/instruments/shares.csv')[['figi', 'ticker', 'first_1min_candle_date']]
-futures = pd.read_csv('/Users/s/Desktop/segr/instruments/futures.csv')[['figi', 'ticker', 'first_1min_candle_date']]
+mock = True
+tickers = ['SBER']
 
-instruments = pd.concat([shares, futures])
+client_config = {
+    'sandbox': True,
+    'restart_sandbox_account': False,
+    'trade': False,
+    'period_duration': 5
+}
 
-print(list(instruments['ticker']))
+mock_client_config = {
+    'period': datetime(year=2024, month=1, day=10, hour=6, minute=58),
+    'tickers': tickers
+}
 
-start = timer()
+if __name__ == '__main__':
+    Client, Ticker, client_config = start_up(
+        mock=mock,
+        client_config=client_config,
+        mock_client_config=mock_client_config
+    )
 
-#sber = Models(['SBER', 'MGNT', 'VKCO'], [HAR_RV(), HAR_RV(transformRV=np.sqrt)]).getTestPredict()
+    tickers = [Ticker(ticker) for ticker in tickers]
 
-check1 = timer()
+    strategies = [
+        TradeAndHold(
+            tickers=tickers,
+            return_threshold_up=10,
+            return_threshold_down=10,
+            buy=True,
+            sessions=(
+                SessionPeriod.PREMARKET,
+                SessionPeriod.MAIN,
+                SessionPeriod.AFTERHOURS)
+        )
+    ]
 
-#print(sber.shape, check1 - start)
-
-    
-
+    TradingInterface(
+        strategies=strategies,
+        account=AccountType.ACCOUNT_TYPE_TINKOFF,
+    ).launch(
+        client_constructor=Client,
+        client_config=client_config
+    )
