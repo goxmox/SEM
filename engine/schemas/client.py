@@ -95,7 +95,7 @@ class Services(ABC):
         else:
             last_day_number = 0
 
-        if start_date is not None:
+        if start_date is None:
             start_date = LocalCandlesUploader.get_new_candle_datetime(ticker)
 
         candles_request_date = datetime.now().astimezone()

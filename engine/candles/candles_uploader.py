@@ -63,7 +63,10 @@ class LocalCandlesUploader:
 
     @staticmethod
     def save_new_candles(new_candles: pd.DataFrame, ticker: Ticker):
-        LocalCandlesUploader.candles_in_memory[ticker.ticker_sign].append(new_candles)
+        if ticker.ticker_sign in LocalCandlesUploader.candles_in_memory.keys():
+            LocalCandlesUploader.new_candles[ticker.ticker_sign].append(new_candles)
+        else:
+            LocalCandlesUploader.new_candles[ticker.ticker_sign] = [new_candles]
 
     @staticmethod
     def cache_new_candles():
@@ -84,10 +87,15 @@ class LocalCandlesUploader:
                     )
                 )
 
-            LocalCandlesUploader.candles_in_memory[ticker_sign] = pd.concat(
-                [LocalCandlesUploader.candles_in_memory[ticker_sign]]
-                + LocalCandlesUploader.new_candles[ticker_sign]
-            )
+            if ticker_sign in LocalCandlesUploader.candles_in_memory.keys():
+                LocalCandlesUploader.candles_in_memory[ticker_sign] = pd.concat(
+                    [LocalCandlesUploader.candles_in_memory[ticker_sign]]
+                    + LocalCandlesUploader.new_candles[ticker_sign]
+                )
+            else:
+                LocalCandlesUploader.candles_in_memory[ticker_sign] = pd.concat(
+                    LocalCandlesUploader.new_candles[ticker_sign]
+                )
 
-            del LocalCandlesUploader.new_candles[ticker_sign]
+        LocalCandlesUploader.new_candles = {}
 
