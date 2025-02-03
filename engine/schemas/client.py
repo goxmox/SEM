@@ -91,7 +91,12 @@ class Services(ABC):
         last_cached_candle = LocalCandlesUploader.get_last_candle(ticker)
 
         if last_cached_candle is not None:
+            last_cached_candle = last_cached_candle.copy()
+
             last_day_number = last_cached_candle.iloc[0]['day_number']
+            e
+            del last_cached_candle['day_number']
+            last_cached_candle = last_cached_candle.reset_index()
         else:
             last_day_number = 0
 
@@ -128,7 +133,7 @@ class Services(ABC):
         if last_cached_candle is not None:
             new_candles = new_candles.iloc[1:]
 
-        if new_candles.shape != 0:
+        if new_candles.shape[0] != 0:
             LocalCandlesUploader.save_new_candles(new_candles, ticker)
 
             return True

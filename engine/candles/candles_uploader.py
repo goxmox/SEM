@@ -21,7 +21,7 @@ class LocalCandlesUploader:
             return LocalCandlesUploader.candles_in_memory[ticker.ticker_sign]
         else:
             candles_df = pd.read_csv(
-                candle_path + f'{LocalCandlesUploader.broker.broker_name}\\{ticker.ticker_sign}\\{ticker.ticker_sign}.csv'
+                candle_path + f'{LocalCandlesUploader.broker.broker_name}/{ticker.ticker_sign}/{ticker.ticker_sign}.csv'
             )
 
             candles_df['time'] = pd.to_datetime(candles_df['time'], format='%Y-%m-%d %H:%M:%S%z')
@@ -30,7 +30,6 @@ class LocalCandlesUploader:
             LocalCandlesUploader.candles_in_memory[ticker.ticker_sign] = candles_df
 
             last_candle = candles_df.iloc[-1:].copy()
-            del last_candle['day_number']
 
             LocalCandlesUploader.last_candles[ticker.ticker_sign] = last_candle
             LocalCandlesUploader.candles_start_dates[ticker.ticker_sign] = last_candle.index[0] \
@@ -51,7 +50,7 @@ class LocalCandlesUploader:
             return LocalCandlesUploader.candles_start_dates[ticker.ticker_sign]
         else:
             instruments_first_candles = pd.read_csv(
-                instrument_path + f'{LocalCandlesUploader.broker.broker_name}\\{ticker.type_instrument.name}.csv'
+                instrument_path + f'{LocalCandlesUploader.broker.broker_name}/{ticker.type_instrument.name}.csv'
             )[['uid', 'first_1min_candle_date']].set_index('uid')
 
             start_date = datetime.strptime(
@@ -63,7 +62,7 @@ class LocalCandlesUploader:
 
     @staticmethod
     def save_new_candles(new_candles: pd.DataFrame, ticker: Ticker):
-        if ticker.ticker_sign in LocalCandlesUploader.candles_in_memory.keys():
+        if ticker.ticker_sign in LocalCandlesUploader.new_candles.keys():
             LocalCandlesUploader.new_candles[ticker.ticker_sign].append(new_candles)
         else:
             LocalCandlesUploader.new_candles[ticker.ticker_sign] = [new_candles]
@@ -71,7 +70,7 @@ class LocalCandlesUploader:
     @staticmethod
     def cache_new_candles():
         for ticker_sign in LocalCandlesUploader.new_candles.keys():
-            ticker_path = candle_path + f"{LocalCandlesUploader.broker.broker_name}\\{ticker_sign}\\"
+            ticker_path = candle_path + f"{LocalCandlesUploader.broker.broker_name}/{ticker_sign}/"
 
             new_candles = LocalCandlesUploader.new_candles[ticker_sign]
 

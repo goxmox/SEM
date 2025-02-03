@@ -42,8 +42,8 @@ def quotation_to_float(number) -> float:
 
 
 def get_info_of_instruments(type_instrument: InstrumentType, broker: Broker) -> pd.DataFrame:
-    if os.path.isfile(instrument_path + f'{broker.broker_name}\\{type_instrument.name}.csv'):
-        return pd.read_csv(instrument_path + f'{broker.broker_name}\\{type_instrument.name}.csv')
+    if os.path.isfile(instrument_path + f'{broker.broker_name}/{type_instrument.name}.csv'):
+        return pd.read_csv(instrument_path + f'{broker.broker_name}/{type_instrument.name}.csv')
     else:
         raise ValueError(f'{type_instrument.name} is not a supported type of instrument.')
 

@@ -1,19 +1,6 @@
 from datetime import datetime, timezone, timedelta
 import numpy as np
 import torch
-import matplotlib.pyplot as plt
-
-from pomegranate.distributions import DiracDelta
-from pomegranate.gmm import GeneralMixtureModel
-
-from engine.candles.candles_uploader import LocalCandlesUploader
-from api.broker_list import t_invest
-from api.tinvest.tticker import TTicker
-from engine.schemas.data_broker import DataTransformerBroker
-from engine.transformers.returns import Returns
-from engine.transformers.realized_measures import RV
-from engine.transformers.tech_indicators import RSI, EMATrendIdentifier, EMA
-from engine.models.lag import L, preprocess_lags
 
 from engine.models.hmm import HMM
 from engine.schemas.data_broker import DataTransformerBroker
@@ -39,8 +26,8 @@ for ticker in tickers[2:]:
         t = datetime(year=2024, month=12, day=day_).replace(tzinfo=timezone.utc)
 
         model = HMM(
-            normal_states=10,
-            zero_states=0,
+            normal_states=8,
+            zero_states=2,
             verbose=True,
             tol=3000,
             inertia=0.9,

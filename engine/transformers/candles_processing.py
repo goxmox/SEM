@@ -377,3 +377,12 @@ class RemoveSession(TransformerMixin, BaseEstimator):
 
         return pd.concat(candles_df)
 
+class RemoveZeroActivityCandles(TransformerMixin, BaseEstimator):
+    def __init__(self):
+        self.name = 'RemoveZeroActivityCandles'
+
+    def fit(self, X):
+        return self
+
+    def transform(self, X: pd.DataFrame):
+        return X[X['volume'] != 0]

@@ -11,12 +11,10 @@ import joblib
 class DataTransformerBroker:
     nodes: dict[str, list['DataNode']] = {}
     optimized: dict[str, bool] = {}
-    memory_limit: int = 1e6
 
     def __init__(self,
                  ticker: Ticker,
-                 remove_session: list[str] = None,
-                 memory_limit=1e6
+                 remove_session: list[str] = None
                  ):
         self.ticker = ticker
         self.ticker_sign = ticker.ticker_sign
@@ -33,9 +31,11 @@ class DataTransformerBroker:
 
         self.optimized[self.ticker_sign] = False
 
-        DataTransformerBroker.memory_limit = memory_limit
-
-    def make_pipeline(self, steps: list, end_date: datetime = datetime.now(tz=timezone.utc)):
+    def make_pipeline(
+            self,
+            steps: list,
+            end_date: datetime = datetime.now(tz=timezone.utc)
+    ):
         parent_node = DataNode(ticker=self.ticker, remove_session=self.remove_session)
         self.nodes[self.ticker_sign].append(parent_node)
         self.end_date = end_date.replace(tzinfo=timezone.utc)
@@ -85,7 +85,7 @@ class DataTransformerBroker:
         if self.model is None:
             raise ValueError('No model is specified.')
 
-        path = candle_path + LocalCandlesUploader.broker_name
+        path = candle_path + LocalCandlesUploader.broker.broker_name
 
         if not os.path.isdir(path + f'/{self.ticker_sign}'):
             os.mkdir(path + f'/{self.ticker_sign}')
@@ -108,7 +108,7 @@ class DataTransformerBroker:
     def load_model(self, compute_data=False):
         pickled_models = []
 
-        path = candle_path + LocalCandlesUploader.broker_name
+        path = candle_path + LocalCandlesUploader.broker.broker_name
 
         for model in os.listdir(path + f'/{self.ticker_sign}/{self.model.name}/{self.data_name}/'):
             pickled_models.append(path + f'/{self.ticker_sign}/{self.model.name}/{self.data_name}/' + model)
@@ -133,7 +133,10 @@ class DataTransformerBroker:
 
         data_list = joblib.load(latest_model)
 
-        self.model.load_model(data_list[0])
+        if type(data_list[0]) == type(self.model):
+            self.model = data_list[0]
+        else:
+            self.model.load_model(data_list[0])
 
         if not compute_data:
             self.final_datanode.load_model(data_list[1:])
@@ -253,7 +256,7 @@ class DataNode:
             else:
                 new_parent_data = []
         else:
-            new_parent_data = self.parent.update()
+            new_parent_data = self.parent.update(new_date)
 
         new_data = self.transformer.transform(new_parent_data)
         self.new_data.append(new_data)
@@ -272,7 +275,11 @@ class DataNode:
 
     def load_model(self, data_list):
         if self.parent is not None:
-            self.transformer.load_model(data_list[0])
+            if type(data_list[0]) == type(self.transformer):
+                self.transformer = data_list[0]
+            else:
+                self.transformer.load_model(data_list[0])
+
             self.parent.load_model(data_list[1:])
 
     def __eq__(self, other: 'DataNode'):

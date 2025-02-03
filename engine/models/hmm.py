@@ -1,11 +1,12 @@
 from pomegranate.hmm import DenseHMM
 from pomegranate.gmm import GeneralMixtureModel
 from pomegranate.distributions import Normal, DiracDelta
+from hmmlearn.hmm import GaussianHMM
 import pandas as pd
 import torch
 
 
-class HMM(DenseHMM):
+class HMMPomegranate(DenseHMM):
     def __init__(
             self,
             *args,
@@ -90,3 +91,17 @@ class HMM(DenseHMM):
             self.forward_prob = self.forward_prob.reshape(-1)
 
         return self.forward_prob
+
+class HMMLearn(GaussianHMM):
+    def __init__(
+            self,
+            n_components=2,
+            covariance_type='full',
+            **kwargs
+    ):
+        super().__init__(n_components=n_components, covariance_type=covariance_type, **kwargs)
+
+        self.name = f'HMMLearn(n_components={n_components},covariance_type={covariance_type})'
+
+    def save_model(self):
+        return self
