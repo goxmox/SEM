@@ -1,5 +1,4 @@
 from datetime import datetime, timezone, timedelta
-import numpy as np
 
 from engine.models.hmm import HMMLearn
 from engine.schemas.data_broker import DataTransformerBroker
@@ -31,10 +30,11 @@ for day_ in [1]:
     model = HMMLearn(
         n_components=int(sys.argv[1]),
         verbose=True,
-        tol=1000,
+        tol=500,
+        n_iter=1000
     )
 
-    pipe = DataTransformerBroker(tick, remove_session=['premarket']).make_pipeline(
+    pipe = DataTransformerBroker(tick).make_pipeline(
         [
             RemoveZeroActivityCandles(),
             Returns(keep_overnight=False),
@@ -46,8 +46,11 @@ for day_ in [1]:
 
     pipe.fit()
 
-    bic, aic = pipe.model.bic(), pipe.model.aic()
+    bic = pipe.model.bic(pipe.final_datanode.data.to_numpy())
+    aic = pipe.model.aic(pipe.final_datanode.data.to_numpy())
     ans = f'Number of states={sys.argv[1]}\nAIC: {aic}\nBIC: {bic}'
+
+    print(ans)
 
     with open(os.getcwd() + f'/ans_{sys.argv[1]}.txt', 'w') as log:
         log.write(ans)

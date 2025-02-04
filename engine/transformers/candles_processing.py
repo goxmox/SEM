@@ -386,3 +386,9 @@ class RemoveZeroActivityCandles(TransformerMixin, BaseEstimator):
 
     def transform(self, X: pd.DataFrame):
         return X[X['volume'] != 0]
+
+    def save_model(self):
+        return {}
+
+    def load_model(self):
+        pass
