@@ -133,7 +133,7 @@ class DataTransformerBroker:
 
         data_list = joblib.load(latest_model)
 
-        if type(data_list[0]) == type(self.model):
+        if type(data_list[0]) is type(self.model):
             self.model = data_list[0]
         else:
             self.model.load_model(data_list[0])
@@ -160,8 +160,11 @@ class DataTransformerBroker:
             return False
 
     def update(self, new_date: datetime):
-        new_data: pd.DataFrame = self.final_datanode.update(new_date)
-        self.model.update(new_data)
+        new_data = self.final_datanode.update(new_date)
+
+        if len(new_data) > 0:
+            self.model.update(new_data)
+
         self.end_date = new_date
 
     def cache_new_data(self):
@@ -252,14 +255,17 @@ class DataNode:
             self.n_of_new_data_processed += num_of_new_candle_batches
 
             if num_of_new_candle_batches > 0:
-                new_parent_data = LocalCandlesUploader.new_candles[-num_of_new_candle_batches:]
+                new_data = LocalCandlesUploader.new_candles[-num_of_new_candle_batches:]
             else:
-                new_parent_data = []
+                new_data = []
         else:
             new_parent_data = self.parent.update(new_date)
 
-        new_data = self.transformer.transform(new_parent_data)
-        self.new_data.append(new_data)
+            if len(new_parent_data) == 0:
+                return []
+
+            new_data = self.transformer.transform(new_parent_data)
+            self.new_data.append(new_data)
 
         return new_data
 
@@ -275,7 +281,7 @@ class DataNode:
 
     def load_model(self, data_list):
         if self.parent is not None:
-            if type(data_list[0]) == type(self.transformer):
+            if type(data_list[0]) is type(self.transformer):
                 self.transformer = data_list[0]
             else:
                 self.transformer.load_model(data_list[0])

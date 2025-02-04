@@ -390,5 +390,5 @@ class RemoveZeroActivityCandles(TransformerMixin, BaseEstimator):
     def save_model(self):
         return {}
 
-    def load_model(self):
+    def load_model(self, data):
         pass
