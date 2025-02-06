@@ -96,7 +96,7 @@ class DataTransformerBroker:
         scores = []
 
         if supply_returns:
-            returns = self.fetch_data('Returns')['']
+            returns = self.fetch_data('Returns')['returns']
         else:
             returns = None
 
