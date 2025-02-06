@@ -1,5 +1,7 @@
 from datetime import datetime, timezone, timedelta
 
+import numpy as np
+
 from engine.models.hmm import HMMLearn
 from engine.schemas.data_broker import DataTransformerBroker
 from engine.transformers.returns import Returns
@@ -29,9 +31,11 @@ for day_ in [1]:
 
     model = HMMLearn(
         n_components=int(sys.argv[1]),
+        covariance_type='diag',
         verbose=True,
         tol=500,
-        n_iter=1000
+        n_iter=1000,
+        score='state_share'
     )
 
     pipe = DataTransformerBroker(tick).make_pipeline(
@@ -44,14 +48,22 @@ for day_ in [1]:
     #    end_date=t
     )
 
-    pipe.fit()
+    pipe.fit(tries=10)
+    
+    X = pipe.final_datanode.data.to_numpy()
+    means = pipe.model.means_ * pipe.final_datanode.transformer.scale_[0] * 10000
+    stds = np.sqrt(pipe.model.covars_) * pipe.final_datanode.transformer.scale_[0] * 10000
+    
+    means = means[:, 0]
+    stds = stds[:, 0, 0]
 
-    bic = pipe.model.bic(pipe.final_datanode.data.to_numpy())
-    aic = pipe.model.aic(pipe.final_datanode.data.to_numpy())
-    ans = f'Number of states={sys.argv[1]}\nAIC: {aic}\nBIC: {bic}'
+    bic = pipe.model.bic(X)
+    aic = pipe.model.aic(X)
+    score = pipe.model.score(X)
+    ans = f'Number of states={sys.argv[1]}\nAIC: {aic}\nBIC: {bic}\nScore: {score}'
 
     print(ans)
 
-    with open(os.getcwd() + f'/ans_{sys.argv[1]}.txt', 'w') as log:
+    with open(os.getcwd() + f'/ans_{sys.argv[1]}_{datetime.now()}.txt', 'w') as log:
         log.write(ans)
 

@@ -6,6 +6,7 @@ import pandas as pd
 from datetime import datetime, timezone
 import os
 import joblib
+import copy
 
 
 class DataTransformerBroker:
@@ -73,11 +74,26 @@ class DataTransformerBroker:
 
         return self.final_datanode.data
 
-    def fit(self, **kwargs):
+    def fit(self, tries=1, show_score=False, **kwargs):
         data = self.compute()
         self.fit_date = data.index[-1]
 
-        self.model.fit(data.to_numpy(), **kwargs)
+        models = [self.model]
+        if tries > 1:
+            models += [copy.deepcopy(self.model) for try_ in range(tries-1)]
+
+        scores = []
+
+        for i, model in enumerate(models):
+            model.fit(data.to_numpy(), **kwargs)
+            score = model.score(data.to_numpy(), **kwargs)
+
+            if show_score:
+                print(f'[{i}] Score: {score}')
+
+            scores.append(score)
+
+        self.model = models[scores.index(max(scores))]
 
         return self
 

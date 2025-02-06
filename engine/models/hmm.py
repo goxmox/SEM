@@ -3,7 +3,32 @@ from pomegranate.gmm import GeneralMixtureModel
 from pomegranate.distributions import Normal, DiracDelta
 from hmmlearn.hmm import GaussianHMM
 import pandas as pd
+import numpy as np
 import torch
+
+
+class HMMReturnsMixin:
+    def state_share(self, X, state_type='profitable', bear_m=-1, bull_m=1, calm_s=4):
+        state_share = 0
+        states = self.decode(X)
+        means = self.means()
+        stds = self.stds()
+        
+        if (state_type == 'bear') or (state_type == 'profitable') or (state_type == 'informative'):
+            state_share += np.sum(np.isin(states, np.argwhere(means < bear_m))) / states.shape[0]
+        if (state_type == 'bull') or (state_type == 'profitable') or (state_type == 'informative'):
+            state_share += np.sum(np.isin(states, np.argwhere(means > bull_m))) / states.shape[0]
+        if (state_type == 'calm') or (state_type == 'informative'):
+            state_share += (
+                    np.sum(
+                        np.isin(
+                            states,
+                            np.argwhere((bear_m <= means) & (means <= bull_m) & (stds <= calm_s))
+                        )
+                    ) / states.shape[0]
+            )
+
+        return state_share
 
 
 class HMMPomegranate(DenseHMM):
@@ -92,16 +117,38 @@ class HMMPomegranate(DenseHMM):
 
         return self.forward_prob
 
-class HMMLearn(GaussianHMM):
+class HMMLearn(GaussianHMM, HMMReturnsMixin):
     def __init__(
             self,
             n_components=2,
             covariance_type='full',
+            score=None,
+            score_arguments: dict =None,
             **kwargs
     ):
         super().__init__(n_components=n_components, covariance_type=covariance_type, **kwargs)
 
+        if score_arguments is None:
+            score_arguments = {}
+
         self.name = f'HMMLearn(n_components={n_components},covariance_type={covariance_type})'
+        self._score = score
+        self._score_arguments = score_arguments
 
     def save_model(self):
         return self
+    
+    def decode(self, X, lengths=None, algorithm=None):
+        return super().decode(X, lengths=lengths, algorithm=algorithm)[1]
+
+    def means(self):
+        return self.means_[:, 0]
+
+    def stds(self):
+        return np.sqrt(self.covars_[:, 0, 0])
+
+    def score(self, X, lengths=None):
+        if self._score is None:
+            return super().score(X, lengths=lengths)
+        elif self._score == 'state_share':
+            return self.state_share(X, **self._score_arguments)
