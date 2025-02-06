@@ -251,7 +251,6 @@ class DataNode:
     ):
         self.ticker = ticker
         self.transformer = transformer
-        self.name = self.transformer.name
         self.parent = parent
         self.end_date = None
         self.children = []
@@ -260,6 +259,11 @@ class DataNode:
         self.n_of_new_data_processed = 0
         self.data_broker = []
         self.remove_session = remove_session
+
+        if self.transformer is not None:
+            self.name = self.transformer.name
+        else:
+            self.name = 'Candles'
 
     def compute(self, end_date=None):
         if self.end_date is None:
