@@ -48,14 +48,9 @@ for day_ in [1]:
     #    end_date=t
     )
 
-    pipe.fit(tries=10)
+    pipe.fit(tries=10, supply_returns=True)
     
     X = pipe.final_datanode.data.to_numpy()
-    means = pipe.model.means_ * pipe.final_datanode.transformer.scale_[0] * 10000
-    stds = np.sqrt(pipe.model.covars_) * pipe.final_datanode.transformer.scale_[0] * 10000
-    
-    means = means[:, 0]
-    stds = stds[:, 0, 0]
 
     bic = pipe.model.bic(X)
     aic = pipe.model.aic(X)

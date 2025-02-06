@@ -74,7 +74,18 @@ class DataTransformerBroker:
 
         return self.final_datanode.data
 
-    def fit(self, tries=1, show_score=False, **kwargs):
+    def fetch_data(self, node_subname):
+        node = self.final_datanode
+
+        while node is not None:
+            if node_subname in node.name:
+                return node.data
+
+            node = node.parent
+
+        return
+
+    def fit(self, tries=1, show_score=False, supply_returns=False, **kwargs):
         data = self.compute()
         self.fit_date = data.index[-1]
 
@@ -84,9 +95,18 @@ class DataTransformerBroker:
 
         scores = []
 
+        if supply_returns:
+            returns = self.fetch_data('Returns')['']
+        else:
+            returns = None
+
         for i, model in enumerate(models):
             model.fit(data.to_numpy(), **kwargs)
-            score = model.score(data.to_numpy(), **kwargs)
+
+            if supply_returns:
+                score = model.score(data.to_numpy(), returns=returns, **kwargs)
+            else:
+                score = model.score(data.to_numpy(), **kwargs)
 
             if show_score:
                 print(f'[{i}] Score: {score}')
@@ -231,6 +251,7 @@ class DataNode:
     ):
         self.ticker = ticker
         self.transformer = transformer
+        self.name = self.transformer.name
         self.parent = parent
         self.end_date = None
         self.children = []

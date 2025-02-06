@@ -8,12 +8,33 @@ import torch
 
 
 class HMMReturnsMixin:
-    def state_share(self, X, state_type='profitable', bear_m=-1, bull_m=1, calm_s=4):
+    def state_share(
+            self,
+            X,
+            state_type='profitable',
+            returns=None,
+            bear_m=-1,
+            bull_m=1,
+            calm_s=4
+    ):
         state_share = 0
         states = self.decode(X)
-        means = self.means()
-        stds = self.stds()
-        
+        n_states = len(np.unique(states))
+
+        if returns is None:
+            means = self.means()
+            stds = self.stds()
+        else:
+            moments = []
+
+            for s in range(n_states):
+                state_returns = returns[states == s]
+
+                moments.append([state_returns.mean(), state_returns.std()])
+
+            moments = np.array(moments) * 10000
+            means, stds = moments[:, 0], moments[:, 1]
+
         if (state_type == 'bear') or (state_type == 'profitable') or (state_type == 'informative'):
             state_share += np.sum(np.isin(states, np.argwhere(means < bear_m))) / states.shape[0]
         if (state_type == 'bull') or (state_type == 'profitable') or (state_type == 'informative'):
@@ -83,7 +104,7 @@ class HMMPomegranate(DenseHMM):
 
         return f
 
-    def fit(self, X, sample_weight=None, priors=None, pretrain_gmm=False):
+    def fit(self, X, sample_weight=None, priors=None, pretrain_gmm=False, returns=None):
         if pretrain_gmm:
             GeneralMixtureModel(distributions=self.distributions, tol=100, verbose=True, inertia=0.9).fit(X.to_numpy())
 
@@ -123,7 +144,7 @@ class HMMLearn(GaussianHMM, HMMReturnsMixin):
             n_components=2,
             covariance_type='full',
             score=None,
-            score_arguments: dict =None,
+            score_arguments: dict = None,
             **kwargs
     ):
         super().__init__(n_components=n_components, covariance_type=covariance_type, **kwargs)
@@ -147,8 +168,10 @@ class HMMLearn(GaussianHMM, HMMReturnsMixin):
     def stds(self):
         return np.sqrt(self.covars_[:, 0, 0])
 
-    def score(self, X, lengths=None):
+    def score(self, X, lengths=None, returns=None):
         if self._score is None:
             return super().score(X, lengths=lengths)
         elif self._score == 'state_share':
+            self._score_arguments['returns'] = returns
+
             return self.state_share(X, **self._score_arguments)
