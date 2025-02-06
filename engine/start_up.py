@@ -1,31 +1,33 @@
-from engine.schemas.client import Services, Client
-from engine.schemas.datatypes import Broker
-from engine.schemas.constants import instrument_path
 from engine.candles.candles_uploader import LocalCandlesUploader
 from api.broker_list import t_invest
 from api.tinvest.mock_client import TMockClient
 from api.tinvest.tclient import TClient
 from api.tinvest.tticker import TTicker
 from api.tinvest.set_token import set_token
-from typing import Type
-import os
+from api.tinvest.datatypes import AccountType
 
 
 def start_up(
-        mock=True,
         client_config=None,
+        tickers_collection=None,
         mock_client_config=None,
         set_up_instruments=False
 ):
+    mock = (client_config is None) and (mock_client_config is not None)
+
     set_token()
 
-    LocalCandlesUploader.broker_name = t_invest.broker_name
+    LocalCandlesUploader.broker = t_invest
 
     if set_up_instruments:
         with TClient(**client_config) as client:
             client.services.get_instruments()
 
+    tickers_collection = [TTicker(ticker) for ticker in tickers_collection]
+
     if mock:
-        return TMockClient, TTicker, mock_client_config
+        mock_client_config['tickers'] = tickers_collection
+
+        return TMockClient, tickers_collection, mock_client_config, AccountType.ACCOUNT_TYPE_TINKOFF
     else:
-        return TClient, TTicker, client_config
+        return TClient, tickers_collection, client_config, AccountType.ACCOUNT_TYPE_TINKOFF

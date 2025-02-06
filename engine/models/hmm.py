@@ -143,18 +143,11 @@ class HMMLearn(GaussianHMM, HMMReturnsMixin):
             self,
             n_components=2,
             covariance_type='full',
-            score=None,
-            score_arguments: dict = None,
             **kwargs
     ):
         super().__init__(n_components=n_components, covariance_type=covariance_type, **kwargs)
 
-        if score_arguments is None:
-            score_arguments = {}
-
         self.name = f'HMMLearn(n_components={n_components},covariance_type={covariance_type})'
-        self._score = score
-        self._score_arguments = score_arguments
 
     def save_model(self):
         return self
@@ -168,10 +161,5 @@ class HMMLearn(GaussianHMM, HMMReturnsMixin):
     def stds(self):
         return np.sqrt(self.covars_[:, 0, 0])
 
-    def score(self, X, lengths=None, returns=None):
-        if self._score is None:
-            return super().score(X, lengths=lengths)
-        elif self._score == 'state_share':
-            self._score_arguments['returns'] = returns
-
-            return self.state_share(X, **self._score_arguments)
+    def forecast(self, h=1):
+        pass

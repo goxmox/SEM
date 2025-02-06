@@ -85,28 +85,19 @@ class DataTransformerBroker:
 
         return
 
-    def fit(self, tries=1, show_score=False, supply_returns=False, **kwargs):
+    def fit(self, tries=1, show_score=False, **kwargs):
         data = self.compute()
         self.fit_date = data.index[-1]
 
         models = [self.model]
         if tries > 1:
-            models += [copy.deepcopy(self.model) for try_ in range(tries-1)]
+            models += [copy.deepcopy(self.model) for _ in range(tries-1)]
 
         scores = []
 
-        if supply_returns:
-            returns = self.fetch_data('Returns')['returns']
-        else:
-            returns = None
-
         for i, model in enumerate(models):
             model.fit(data.to_numpy(), **kwargs)
-
-            if supply_returns:
-                score = model.score(data.to_numpy(), returns=returns, **kwargs)
-            else:
-                score = model.score(data.to_numpy(), **kwargs)
+            score = model.score(data.to_numpy(), **kwargs)
 
             if show_score:
                 print(f'[{i}] Score: {score}')

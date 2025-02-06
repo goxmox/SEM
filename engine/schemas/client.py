@@ -19,7 +19,7 @@ class Client(ABC):
         self.services: 'Services' = None
         self.period: Period = None
         self.TickerWrapper: Callable[[str], Ticker] = None
-        self.period_duration: int = None
+        self.period_duration: int = 0
 
     @abstractmethod
     def get_account(self, account_type) -> 'Account':

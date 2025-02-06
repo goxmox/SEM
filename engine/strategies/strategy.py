@@ -9,7 +9,7 @@ from engine.schemas.constants import log_path
 
 
 class Strategy(ABC):
-    def __init__(self, tickers: list[Ticker], cash_share: float = 1.,
+    def __init__(self, cash_share: float = 1.,
                  sessions=(SessionPeriod.MAIN,), **additional_open_to_trading_parameters):
         self.active, self._executed, self.ongoing_trading = True, False, False
         self._period: Period = None
@@ -20,11 +20,11 @@ class Strategy(ABC):
         self._cash_share = cash_share
         self._sessions = sessions
         self._additional_open_to_trading_parameters = additional_open_to_trading_parameters
-        self.tickers_collection: list[Ticker] = tickers
+        self.tickers_collection: list[Ticker] = None
         self.portfolio_prices: dict[str, float]
         self.portfolio_lots: dict[str, int]
         self._order_manager: OrderManager = None
-        self._tickers_for_candle_fetching = self.tickers_collection
+        self._tickers_for_candle_fetching = None
         self._selected_tickers_to_trade: set = set()
         self.types_instruments = list(set([ticker.type_instrument for ticker in self.tickers_collection]))
 
@@ -87,13 +87,15 @@ class Strategy(ABC):
             order.order_id = order_response.order_id
             order.price = float(order_response.initial_order_price / order.quantity)
 
-    def execute(self, client: Client, account):
+    def execute(self, client: Client, account, tickers: list[Ticker]):
         if not self._executed:
             self._client = client
             self._services = client.services
             self._period = client.period
             self._account = client.get_account(account)
             self._cash = client.get_available_balance(self._account) * self._cash_share
+            self.tickers_collection = tickers
+            self._tickers_for_candle_fetching = tickers
             self._order_manager = OrderManager(
                 client=client,
                 account=account,
@@ -105,15 +107,9 @@ class Strategy(ABC):
 
         if self.ongoing_trading:
             self._update()
-        else:
-            self._update_offhours()
 
     @abstractmethod
     def _update(self):
-        pass
-
-    @abstractmethod
-    def _update_offhours(self):
         pass
 
     def terminate(self):
