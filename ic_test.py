@@ -48,7 +48,7 @@ for day_ in [1]:
     #    end_date=t
     )
 
-    pipe.fit(tries=10, supply_returns=True)
+    pipe.fit(tries=10, supply_returns=True, show_score=True)
     
     X = pipe.final_datanode.data.to_numpy()
 
