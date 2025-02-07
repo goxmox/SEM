@@ -26,7 +26,7 @@ t = datetime(year=2024, month=12, day=1).replace(tzinfo=timezone.utc)
 
 # model fitting
 model = HMMLearn(
-    n_components=5,
+    n_components=sys.argv[1],
     covariance_type='diag',
     verbose=True,
     tol=500,
@@ -43,7 +43,7 @@ pipe = DataTransformerBroker(tick).make_pipeline(
     end_date=t
 )
 
-pipe.fit(tries=2, show_score=True)
+pipe.fit(tries=3, show_score=True)
 print(pipe.fetch_data('Returns').to_numpy())
 X = pipe.final_datanode.data.to_numpy()
 
@@ -59,12 +59,12 @@ for state in state_dist:
 bic = pipe.model.bic(X)
 aic = pipe.model.aic(X)
 score = pipe.model.score(X)
-ans = f'Number of states={2}\nAIC: {aic}\nBIC: {bic}\nScore: {score}\nBear+Bull: {bull_bear}'
+ans = f'Number of states={sys.argv[1]}\nAIC: {aic}\nBIC: {bic}\nScore: {score}\nBear+Bull: {bull_bear}'
 
 print(ans)
 
-# with open(os.getcwd() + f'/ans_{2}_{datetime.now()}.txt', 'w') as log:
-#     log.write(ans)
+with open(os.getcwd() + f'/ans_{2}_{datetime.now()}.txt', 'w') as log:
+    log.write(ans)
 
 #pipe.save_model()
 
