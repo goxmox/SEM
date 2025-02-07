@@ -3,7 +3,6 @@ from api.broker_list import t_invest
 from api.tinvest.mock_client import TMockClient
 from api.tinvest.tclient import TClient
 from api.tinvest.tticker import TTicker
-from api.tinvest.set_token import set_token
 from api.tinvest.datatypes import AccountType
 
 
@@ -15,7 +14,9 @@ def start_up(
 ):
     mock = (client_config is None) and (mock_client_config is not None)
 
-    set_token()
+    if not mock:
+        from api.tinvest.set_token import set_token
+        set_token()
 
     LocalCandlesUploader.broker = t_invest
 
