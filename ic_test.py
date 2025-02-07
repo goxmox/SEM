@@ -26,7 +26,7 @@ t = datetime(year=2024, month=12, day=1).replace(tzinfo=timezone.utc)
 
 # model fitting
 model = HMMLearn(
-    n_components=sys.argv[1],
+    n_components=int(sys.argv[1]),
     covariance_type='diag',
     verbose=True,
     tol=500,
