@@ -20,5 +20,6 @@ def main(
         account=account,
     ).launch(
         client_constructor=client,
-        client_config=client_config
+        client_config=client_config,
+        tickers_collection=tickers_collection
     )

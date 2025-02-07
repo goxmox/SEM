@@ -1,4 +1,4 @@
-from engine.schemas.datatypes import Period, Broker
+from engine.schemas.datatypes import Period, Broker, Ticker
 from engine.strategies.strategy import Strategy
 from engine.schemas.client import Client
 from engine.schemas.enums import AccountType
@@ -19,7 +19,8 @@ class TradingInterface:
     def launch(
             self,
             client_constructor: Type[Client],
-            client_config: dict
+            client_config: dict,
+            tickers_collection: list[Ticker]
     ):
         with client_constructor(**client_config) as client:
             number_of_inactive_strategies = 0
@@ -32,13 +33,13 @@ class TradingInterface:
                     if not strategy.active:
                         continue
 
-                    try:
-                        strategy.execute(client, self._account)
-                    except Exception as e:
-                        print(e)
-                        strategy.terminate()
+                    #try:
+                    strategy.execute(client, self._account, tickers_collection)
+                    #except Exception as e:
+                    #    print(e)
+                    #    strategy.terminate()
 
-                    print(strategy._orders)
+                    print(strategy._order_manager.orders)
 
                     if not strategy.active:
                         number_of_inactive_strategies += 1

@@ -26,7 +26,7 @@ class Strategy(ABC):
         self._order_manager: OrderManager = None
         self._tickers_for_candle_fetching = None
         self._selected_tickers_to_trade: set = set()
-        self.types_instruments = list(set([ticker.type_instrument for ticker in self.tickers_collection]))
+        self.types_instruments = None
 
     # in _update these two methods should be called before calling _compute_portfolio or _upload_candles
     # in order to update the list of tickers for which prices/candles will be fetched
@@ -96,6 +96,7 @@ class Strategy(ABC):
             self._cash = client.get_available_balance(self._account) * self._cash_share
             self.tickers_collection = tickers
             self._tickers_for_candle_fetching = tickers
+            self.types_instruments = list(set([ticker.type_instrument for ticker in self.tickers_collection]))
             self._order_manager = OrderManager(
                 client=client,
                 account=account,

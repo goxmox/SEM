@@ -8,11 +8,53 @@ import torch
 
 
 class HMMReturnsMixin:
+    def __init__(self):
+        self.states_map = None
+
+    def determine_states(
+            self,
+            X,
+            returns,
+            bear_m=-1,
+            bull_m=1,
+            calm_s=4
+    ):
+        states = self.decode(X)
+        n_states = len(np.unique(states))
+
+        moments = []
+
+        for s in range(n_states):
+            state_returns = returns[states == s]
+
+            moments.append([state_returns.mean(), state_returns.std()])
+
+        moments = np.array(moments) * 10000
+        means, stds = moments[:, 0], moments[:, 1]
+
+        self.states_map = []
+
+        for i in range(n_states):
+            if means[i] > bull_m:
+                self.states_map.append('bull')
+            elif means[i] < bear_m:
+                self.states_map.append('bear')
+            elif stds[i] < calm_s:
+                self.states_map.append('calm')
+            else:
+                self.states_map.append('volatile')
+
+    def forecast_next_state(self, h=1):
+        f = self.forecast(h)
+        state = np.argmax(f)
+
+        return self.states_map[state]
+
     def state_share(
             self,
             X,
+            returns,
             state_type='profitable',
-            returns=None,
             bear_m=-1,
             bull_m=1,
             calm_s=4
@@ -138,6 +180,7 @@ class HMMPomegranate(DenseHMM):
 
         return self.forward_prob
 
+
 class HMMLearn(GaussianHMM, HMMReturnsMixin):
     def __init__(
             self,
@@ -148,6 +191,8 @@ class HMMLearn(GaussianHMM, HMMReturnsMixin):
         super().__init__(n_components=n_components, covariance_type=covariance_type, **kwargs)
 
         self.name = f'HMMLearn(n_components={n_components},covariance_type={covariance_type})'
+        self.forward_prob = None
+        self.posterior_prob = None
 
     def save_model(self):
         return self
@@ -155,11 +200,33 @@ class HMMLearn(GaussianHMM, HMMReturnsMixin):
     def decode(self, X, lengths=None, algorithm=None):
         return super().decode(X, lengths=lengths, algorithm=algorithm)[1]
 
+    def fit(self, X, lengths=None):
+        super().fit(X, lengths=lengths)
+
+        self.posterior_prob = self.predict_proba(X, lengths=lengths)[-1, :]
+        self.forward_prob = self.posterior_prob + self.score(X, lengths=lengths)
+
+        return self
+
     def means(self):
         return self.means_[:, 0]
 
     def stds(self):
         return np.sqrt(self.covars_[:, 0, 0])
 
+    def update(self, X: pd.DataFrame):
+        X = X.to_numpy()
+        p = self._compute_log_likelihood(X)
+
+        for t in range(X.shape[0]):
+            logp = float(torch.logsumexp(self.forward_prob, dim=0))
+            self.forward_prob = np.log(
+                np.exp(self.posterior_prob).reshape(1, -1) @ self.transmat_
+            ) + logp + p
+            self.forward_prob = self.forward_prob.reshape(-1)
+            self.posterior_prob = self.forward_prob - float(torch.logsumexp(self.forward_prob, dim=0))
+
     def forecast(self, h=1):
-        pass
+        f = np.log(np.exp(self.posterior_prob) @ np.linalg.matrix_power(self.transmat_, h))
+
+        return f

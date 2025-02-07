@@ -58,7 +58,7 @@ class TMockClient(local_api.Client):
                 self.candle_data[ticker_uid].iloc[:self.candles_idx[ticker_uid]]
 
             LocalCandlesUploader.last_candles[self.uid_to_tickers[ticker_uid].ticker_sign] =\
-                self.candle_data[self.candles_idx[ticker_uid] - 1:self.candles_idx[ticker_uid]]
+                self.candle_data[ticker_uid].iloc[self.candles_idx[ticker_uid] - 1:self.candles_idx[ticker_uid]]
 
             LocalCandlesUploader.candles_start_dates[self.uid_to_tickers[ticker_uid].ticker_sign] = \
                 self.period.time_period + timedelta(minutes=1)
