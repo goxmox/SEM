@@ -10,7 +10,7 @@ import copy
 
 
 class DataTransformerBroker:
-    nodes: dict[str, list['DataNode']] = {}
+    nodes: dict[Ticker, list['DataNode']] = {}
     optimized: dict[str, bool] = {}
 
     def __init__(self,
@@ -18,7 +18,6 @@ class DataTransformerBroker:
                  remove_session: list[str] = None
                  ):
         self.ticker = ticker
-        self.ticker_sign = ticker.ticker_sign
         self.final_datanode: 'DataNode' = None
         self.model = None
         self.data_name = ''
@@ -27,10 +26,10 @@ class DataTransformerBroker:
         self.next_cached_model_date: datetime = None
         self.remove_session = remove_session
 
-        if self.ticker_sign not in self.nodes.keys():
-            self.nodes[self.ticker_sign] = []
+        if self.ticker not in self.nodes.keys():
+            self.nodes[self.ticker] = []
 
-        self.optimized[self.ticker_sign] = False
+        self.optimized[self.ticker] = False
 
     def make_pipeline(
             self,
@@ -38,7 +37,7 @@ class DataTransformerBroker:
             end_date: datetime = datetime.now(tz=timezone.utc)
     ):
         parent_node = DataNode(ticker=self.ticker, remove_session=self.remove_session)
-        self.nodes[self.ticker_sign].append(parent_node)
+        self.nodes[self.ticker].append(parent_node)
         self.end_date = end_date.replace(tzinfo=timezone.utc)
 
         for idx, step in enumerate(steps):
@@ -61,16 +60,16 @@ class DataTransformerBroker:
 
         self.final_datanode = parent_node
         self.final_datanode.data_broker.append(self)
-        self.optimized[self.ticker_sign] = False
+        self.optimized[self.ticker] = False
 
         return self
 
-    def compute(self, end_date: datetime = None):
+    def compute(self, fit_date: datetime = None, end_date: datetime = None):
         if end_date is None:
             end_date = self.end_date
 
         self._optimize()
-        self.final_datanode.compute(end_date)
+        self.final_datanode.compute(fit_date=fit_date, end_date=end_date)
 
         return self.final_datanode.data
 
@@ -91,7 +90,7 @@ class DataTransformerBroker:
 
         models = [self.model]
         if tries > 1:
-            models += [copy.deepcopy(self.model) for _ in range(tries-1)]
+            models += [copy.deepcopy(self.model) for _ in range(tries - 1)]
 
         scores = []
 
@@ -114,17 +113,17 @@ class DataTransformerBroker:
 
         path = candle_path + LocalCandlesUploader.broker.broker_name
 
-        if not os.path.isdir(path + f'/{self.ticker_sign}'):
-            os.mkdir(path + f'/{self.ticker_sign}')
+        if not os.path.isdir(path + f'/{self.ticker.ticker_sign}'):
+            os.mkdir(path + f'/{self.ticker.ticker_sign}')
 
-        if not os.path.isdir(path + f'/{self.ticker_sign}/{self.model.name}'):
-            os.mkdir(path + f'/{self.ticker_sign}/{self.model.name}')
+        if not os.path.isdir(path + f'/{self.ticker.ticker_sign}/{self.model.name}'):
+            os.mkdir(path + f'/{self.ticker.ticker_sign}/{self.model.name}')
 
-        if not os.path.isdir(path + f'/{self.ticker_sign}/{self.model.name}/{self.data_name}/'):
-            os.mkdir(path + f'/{self.ticker_sign}/{self.model.name}/{self.data_name}/')
+        if not os.path.isdir(path + f'/{self.ticker.ticker_sign}/{self.model.name}/{self.data_name}/'):
+            os.mkdir(path + f'/{self.ticker.ticker_sign}/{self.model.name}/{self.data_name}/')
 
         path = (path
-                + f'/{self.ticker_sign}/{self.model.name}/{self.data_name}/'
+                + f'/{self.ticker.ticker_sign}/{self.model.name}/{self.data_name}/'
                 + f'{self.fit_date.strftime("%Y-%m-%d_%H-%M-%S.pkl")}')
 
         data_list = [self.model.save_model()]
@@ -132,13 +131,13 @@ class DataTransformerBroker:
 
         joblib.dump(data_list, path)
 
-    def load_model(self, compute_data=False):
+    def load_model(self):
         pickled_models = []
 
         path = candle_path + LocalCandlesUploader.broker.broker_name
 
-        for model in os.listdir(path + f'/{self.ticker_sign}/{self.model.name}/{self.data_name}/'):
-            pickled_models.append(path + f'/{self.ticker_sign}/{self.model.name}/{self.data_name}/' + model)
+        for model in os.listdir(path + f'/{self.ticker.ticker_sign}/{self.model.name}/{self.data_name}/'):
+            pickled_models.append(path + f'/{self.ticker.ticker_sign}/{self.model.name}/{self.data_name}/' + model)
 
         latest_model = None
 
@@ -160,21 +159,15 @@ class DataTransformerBroker:
 
         data_list = joblib.load(latest_model)
 
-        if type(data_list[0]) is type(self.model):
+        if isinstance(data_list[0], type(self.model)):
             self.model = data_list[0]
         else:
             self.model.load_model(data_list[0])
 
-        if not compute_data:
-            self.final_datanode.load_model(data_list[1:])
+        self.final_datanode.load_model(data_list[1:])
 
-            if self.end_date > self.fit_date:
-                self.update(self.end_date)
-        else:
-            self.compute(self.fit_date)
-
-            if self.end_date > self.fit_date:
-                self.update(self.end_date)
+        if self.end_date > self.fit_date:
+            self.model.update(self.compute(fit_date=self.fit_date, end_date=self.end_date))
 
         return self
 
@@ -198,10 +191,10 @@ class DataTransformerBroker:
         self.final_datanode.cache_new_data()
 
     def _optimize(self):
-        if self.optimized[self.ticker_sign]:
+        if self.optimized[self.ticker]:
             return
 
-        parent_nodes = DataTransformerBroker.nodes[self.ticker_sign]
+        parent_nodes = DataTransformerBroker.nodes[self.ticker]
         children_nodes = []
 
         while parent_nodes:
@@ -229,7 +222,7 @@ class DataTransformerBroker:
             parent_nodes = children_nodes
             children_nodes = []
 
-        self.optimized[self.ticker_sign] = True
+        self.optimized[self.ticker] = True
 
 
 class DataNode:
@@ -251,25 +244,34 @@ class DataNode:
         self.data_broker = []
         self.remove_session = remove_session
 
+        self.fitted = False
+
         if self.transformer is not None:
             self.name = self.transformer.name
         else:
             self.name = 'Candles'
 
-    def compute(self, end_date=None):
+    def compute(self, fit_date=None, end_date=None):
         if self.end_date is None:
             self.end_date = end_date
 
         if self.parent is not None:
             if self.parent.data is None:
-                self.parent.compute(end_date)
+                self.parent.compute(fit_date=fit_date, end_date=end_date)
 
-            if self.data is None:
+            if (self.data is None) and (not self.fitted):
                 self.data = self.transformer.fit_transform(self.parent.data)
+                self.fitted = True
+            elif self.data is None:
+                self.data = self.transformer.transform(self.parent.data)
         else:
             if self.data is None:
                 self.data = LocalCandlesUploader.upload_candles(self.ticker)
-                self.data = self.data[self.data.index <= end_date]
+
+                if fit_date is None:
+                    self.data = self.data[self.data.index <= end_date]
+                else:
+                    self.data = self.data[(fit_date < self.data.index) & (self.data.index <= end_date)]
 
                 if self.remove_session is not None:
                     self.data = RemoveSession(
@@ -282,12 +284,13 @@ class DataNode:
         self.end_date = new_date
 
         if self.parent is None:
-            num_of_new_candle_batches = len(LocalCandlesUploader.new_candles) - self.n_of_new_data_processed
+            num_of_new_candle_batches = len(LocalCandlesUploader.new_candles[self.ticker])\
+                                        - self.n_of_new_data_processed
 
             self.n_of_new_data_processed += num_of_new_candle_batches
 
             if num_of_new_candle_batches > 0:
-                new_data = LocalCandlesUploader.new_candles[-num_of_new_candle_batches:]
+                new_data = LocalCandlesUploader.new_candles[self.ticker][-num_of_new_candle_batches:]
             else:
                 new_data = []
         else:
@@ -308,22 +311,31 @@ class DataNode:
 
     def save_model(self, data_list):
         if self.parent is not None:
-            data_list.append(self.transformer.save_model())
+            data_list.append({'transformer': self.transformer.save_model(), 'fitted': self.fitted})
             self.parent.save_model(data_list)
 
     def load_model(self, data_list):
         if self.parent is not None:
-            if type(data_list[0]) is type(self.transformer):
-                self.transformer = data_list[0]
+            if isinstance(data_list[0], dict) and ('fitted' in data_list[0].keys()):
+                transformer = data_list[0]['transformer']
+                fitted = data_list[0]['fitted']
             else:
-                self.transformer.load_model(data_list[0])
+                transformer = data_list[0]
+                fitted = True
+
+            if isinstance(transformer, type(self.transformer)):
+                self.transformer = transformer
+            else:
+                self.transformer.load_model(transformer)
+
+            self.fitted = fitted
 
             self.parent.load_model(data_list[1:])
 
     def __eq__(self, other: 'DataNode'):
         return ((self.transformer == other.transformer)
                 and (self.parent == other.parent)
-                and (self.ticker.ticker_sign == self.ticker.ticker_sign)
+                and (self.ticker == other.ticker)
                 and (self.end_date == other.end_date)
                 )
 

@@ -19,6 +19,8 @@ class AvgState(Strategy):
             return_threshold_down=10,
             max_num_of_tickers=1,
             num_of_averaging=2,
+            states_to_buy=('bull'),
+            states_to_sell=('bear'),
             sessions=(SessionPeriod.MAIN,),
             **additional_open_to_trading_parameters
     ):
@@ -44,25 +46,26 @@ class AvgState(Strategy):
         self._num_of_order = None
         self._ticker_state: dict = None
 
-    def _determine_signs(self, new_data=None):
-        signs = {}
+        self._states_to_buy = states_to_buy
+        self._states_to_sell = states_to_sell
 
-        for ticker in self._selected_tickers_to_trade:
-            signs |= {ticker.uid:
-                          (self._ticker_state[ticker.uid] == 'bull')
-                          + (-1) * (self._ticker_state[ticker.uid] == 'bear')}
-
-        return signs
-
-    def _determine_lots(self, signed_portfolio, new_data=1):
-        lots = {}
-
+    def _determine_lots(self, ticker: Ticker):
         rate = max(self._return_threshold_up, self._return_threshold_down)
-        share = (1 / self._max_num_of_tickers
-                 * (rate / ((1 + rate) ** self._num_of_averaging - 1)))
+        # share = (1 / self._max_num_of_tickers
+        #          * (rate / ((1 + rate) ** self._num_of_averaging - 1)))
+        share = 1 / self._num_of_averaging
 
-        for ticker in self._selected_tickers_to_trade:
-            lots = {ticker.uid: signed_portfolio[ticker.uid] * self._cash * share // self.portfolio_prices[ticker.uid]}
+        if ticker in self._selected_tickers_to_sell:
+            lots = -1 * self._cash * share // self.portfolio_prices[ticker][
+                    OrderDirection.ORDER_DIRECTION_SELL]
+        elif ticker in self._selected_tickers_to_buy:
+            lots = self._cash * share // self.portfolio_prices[ticker][
+                OrderDirection.ORDER_DIRECTION_BUY]
+
+        if lots > 0:
+            lots = int(lots // ticker.lot)
+        else:
+            lots = int(abs(lots + (lots % ticker.lot)) // ticker.lot)
 
         return lots
 
@@ -70,31 +73,38 @@ class AvgState(Strategy):
         prices = {}
 
         for ticker in self._selected_tickers_to_trade:
-            if self._ticker_state[ticker.uid] == 'bull':
-                prices |= {ticker.uid: prices_data[ticker.uid]['to_buy']}
-            elif self._ticker_state[ticker.uid] == 'bear':
-                prices |= {ticker.uid: prices_data[ticker.uid]['to_sell']}
+            prices |= {ticker:
+                           {OrderDirection.ORDER_DIRECTION_BUY: prices_data[ticker]['to_buy'][0],
+                            OrderDirection.ORDER_DIRECTION_SELL: prices_data[ticker]['to_sell'][0]}
+                       }
 
         return prices
 
     def _deselect_ticker(self, ticker: Ticker):
         self._order_manager.delete_relevant_orders(tickers=[ticker])
         self._selected_tickers_to_trade.remove(ticker)
-        self._threshold_price[ticker.uid] = np.inf
-        self._current_sum_of_market_orders[ticker.uid] = 0
-        self._num_of_executed_averaging_orders[ticker.uid] = 0
-        self._lots_executed[ticker.uid] = 0
-        self._ticker_state[ticker.uid] = 'calm'
+
+        if ticker in self._selected_tickers_to_buy:
+            self._selected_tickers_to_buy.remove(ticker)
+        else:
+            self._selected_tickers_to_sell.remove(ticker)
+
+        self._threshold_price[ticker] = np.inf
+        self._current_sum_of_market_orders[ticker] = 0
+        self._num_of_executed_averaging_orders[ticker] = 0
+        self._lots_executed[ticker] = 0
+        self._ticker_state[ticker] = 'calm'
 
     def _update(self):
         # ----- initialization ----------
 
-        self._num_of_executed_averaging_orders = {ticker.uid: 0 for ticker in self.tickers_collection}
-        self._lots_executed = {ticker.uid: 0 for ticker in self.tickers_collection}
-        self._current_sum_of_market_orders = {ticker.uid: 0 for ticker in self.tickers_collection}
-        self._threshold_price = {ticker.uid: np.inf for ticker in self.tickers_collection}
-        self._num_of_order = {ticker.uid: 0 for ticker in self.tickers_collection}
-        self._ticker_state = {ticker.uid: 'calm' for ticker in self.tickers_collection}
+        if not self._executed:
+            self._num_of_executed_averaging_orders = {ticker: 0 for ticker in self.tickers_collection}
+            self._lots_executed = {ticker: 0 for ticker in self.tickers_collection}
+            self._current_sum_of_market_orders = {ticker: 0 for ticker in self.tickers_collection}
+            self._threshold_price = {ticker: np.inf for ticker in self.tickers_collection}
+            self._num_of_order = {ticker: 0 for ticker in self.tickers_collection}
+            self._ticker_state = {ticker: 'calm' for ticker in self.tickers_collection}
 
         def create_averaging_orders(
                 ticker: Ticker,
@@ -102,24 +112,31 @@ class AvgState(Strategy):
                 number_of_filled_market_orders: int,
                 number_of_order: int
         ):
-            if self._ticker_state[ticker.uid] == 'bull':
-                current_sum_of_market_orders += (self.portfolio_prices[ticker.uid]
-                                                 * (1 + self._return_threshold_up / 10000))
+            print(self._ticker_state[ticker])
+            if ticker in self._selected_tickers_to_buy:
                 direction = OrderDirection.ORDER_DIRECTION_BUY
                 opposite_direction = OrderDirection.ORDER_DIRECTION_SELL
-            elif self._ticker_state[ticker.uid] == 'bear':
-                current_sum_of_market_orders += (self.portfolio_prices[ticker.uid]
+                current_sum_of_market_orders += self.portfolio_prices[ticker][direction]
+                self._threshold_price[ticker] = (self.portfolio_prices[ticker][direction]
                                                  * (1 - self._return_threshold_down / 10000))
+
+                desired_price = current_sum_of_market_orders / (number_of_filled_market_orders + 1) \
+                                * (1 + self._return_threshold_up / 10000)
+            elif ticker in self._selected_tickers_to_sell:
                 direction = OrderDirection.ORDER_DIRECTION_SELL
                 opposite_direction = OrderDirection.ORDER_DIRECTION_BUY
+                current_sum_of_market_orders += self.portfolio_prices[ticker][direction]
+                self._threshold_price[ticker] = (self.portfolio_prices[ticker][direction]
+                                                 * (1 + self._return_threshold_up / 10000))
 
-            desired_price = current_sum_of_market_orders / (number_of_filled_market_orders + 1)
+                desired_price = current_sum_of_market_orders / (number_of_filled_market_orders + 1) \
+                                * (1 - self._return_threshold_down / 10000)
 
             return [
                 LocalOrder(
                     order_name=f'market_{number_of_order}',
-                    price=self.portfolio_prices[ticker.uid],
-                    quantity=self.portfolio_lots[ticker.uid],
+                    price=self.portfolio_prices[ticker][direction],
+                    lots=self.portfolio_lots[ticker],
                     direction=direction,
                     instrument_uid=ticker.uid,
                     ticker=ticker,
@@ -130,7 +147,7 @@ class AvgState(Strategy):
                 LocalOrder(
                     order_name=f'desired_{number_of_order}',
                     price=desired_price,
-                    quantity=self.portfolio_lots[ticker.uid],
+                    lots=self.portfolio_lots[ticker] * (number_of_filled_market_orders + 1),
                     direction=opposite_direction,
                     instrument_uid=ticker.uid,
                     ticker=ticker,
@@ -140,21 +157,22 @@ class AvgState(Strategy):
                 )
             ]
 
-        def create_unwanted_order(ticker: Ticker, number_of_order: int):
-            if self._ticker_state[ticker.uid] == 'bull':
-                undesired_price = (self.portfolio_prices[ticker.uid]
-                                                 * (1 - self._return_threshold_down / 10000))
+        def create_unwanted_order(ticker: Ticker, number_of_order: int, number_of_filled_market_orders: int):
+            if ticker in self._selected_tickers_to_buy:
+                direction = OrderDirection.ORDER_DIRECTION_BUY
                 opposite_direction = OrderDirection.ORDER_DIRECTION_SELL
-            elif self._ticker_state[ticker.uid] == 'bear':
-                undesired_price = (self.portfolio_prices[ticker.uid]
-                                                 * (1 + self._return_threshold_up / 10000))
+                undesired_price = (self.portfolio_prices[ticker][opposite_direction]
+                                   * (1 - self._return_threshold_down / 10000))
+            elif ticker in self._selected_tickers_to_sell:
+                direction = OrderDirection.ORDER_DIRECTION_SELL
                 opposite_direction = OrderDirection.ORDER_DIRECTION_BUY
-
+                undesired_price = (self.portfolio_prices[ticker][opposite_direction]
+                                   * (1 + self._return_threshold_up / 10000))
             return [
                 LocalOrder(
                     order_name=f'unwanted_{number_of_order}',
                     price=undesired_price,
-                    quantity=self.portfolio_lots[ticker.uid],
+                    lots=self.portfolio_lots[ticker] * number_of_filled_market_orders,
                     direction=opposite_direction,
                     instrument_uid=ticker.uid,
                     ticker=ticker,
@@ -165,16 +183,14 @@ class AvgState(Strategy):
             ]
 
         def forecast_next_state(ticker: Ticker):
-            self._ticker_state[ticker.uid] = self._ticker_pipelines[ticker.uid].model.forecast_new_state()
+            self._ticker_state[ticker] = self._ticker_pipelines[ticker].model.forecast_next_state()
+            print(self._ticker_state[ticker])
 
         # -------- logic ---------------
 
         if not self._executed:
-            for ticker in self._tickers_for_candle_fetching:
-                self._services.get_candles(ticker)
-
             self._ticker_pipelines = {
-                ticker.uid: DataTransformerBroker(
+                ticker: DataTransformerBroker(
                     ticker=ticker
                 ).make_pipeline(self._pipeline, end_date=self._period.time_period).load_model()
                 for ticker in self.tickers_collection
@@ -190,8 +206,8 @@ class AvgState(Strategy):
             if 'desired' in order.order_name or 'unwanted' in order.order_name:
                 self._deselect_ticker(order.ticker)
             if 'market' in order.order_name:
-                self._num_of_executed_averaging_orders[order.ticker.uid] += 1
-                self._current_sum_of_market_orders[order.ticker.uid] += order.price
+                self._num_of_executed_averaging_orders[order.ticker] += 1
+                self._current_sum_of_market_orders[order.ticker] += order.price
 
         ## updating info on candles
 
@@ -199,46 +215,70 @@ class AvgState(Strategy):
             new_candles_supplied = self._services.get_candles(ticker)
 
             if new_candles_supplied:
-                self._ticker_pipelines[ticker.uid].update()
+                self._ticker_pipelines[ticker].update(new_date=self._period.time_period)
 
                 forecast_next_state(ticker)
 
         ## selecting new tickers for new trade
 
+        staged_tickers_for_lots_computation = []
+
         for ticker in self._tickers_for_candle_fetching:
-            if self._ticker_state in ['bear', 'bull']:
-                if (ticker not in self._selected_tickers_to_trade
-                        and len(self._selected_tickers_to_trade) < self._max_num_of_tickers):
+            if (ticker not in self._selected_tickers_to_trade
+                    and len(self._selected_tickers_to_trade) < self._max_num_of_tickers):
+                if self._ticker_state[ticker] in self._states_to_buy:
                     self._selected_tickers_to_trade.add(ticker)
+                    staged_tickers_for_lots_computation.append(ticker)
 
-        ## updating prices for selected tickers
+                    self._selected_tickers_to_buy.add(ticker)
+                elif self._ticker_state[ticker] in self._states_to_sell:
+                    self._selected_tickers_to_trade.add(ticker)
+                    staged_tickers_for_lots_computation.append(ticker)
 
-        self._compute_portfolio()
+                    self._selected_tickers_to_sell.add(ticker)
+
+        ## updating prices for selected tickers and lots for newly selected tickers
+
+        self._compute_portfolio_prices()
+
+        for ticker in staged_tickers_for_lots_computation:
+            self._compute_portfolio_lots_for_trade(ticker)
 
         ## creating averaging orders if the threshold is met
 
         for ticker in self._selected_tickers_to_trade:
-            sign = 1 if self._buy else -1
+            if ticker in self._selected_tickers_to_buy:
+                sign = 1
+                direction = OrderDirection.ORDER_DIRECTION_BUY
+                opposite_direction = OrderDirection.ORDER_DIRECTION_SELL
+            else:
+                sign = -1
+                direction = OrderDirection.ORDER_DIRECTION_SELL
+                opposite_direction = OrderDirection.ORDER_DIRECTION_BUY
 
-            if sign * self.portfolio_prices[ticker.uid] <= sign * self._threshold_price[ticker.uid]:
-                if self._num_of_executed_averaging_orders[ticker.uid] == self._num_of_averaging:
+            if (self._threshold_price[ticker] is np.inf) and (sign == -1):
+                self._threshold_price[ticker] = 0
+
+            if sign * self.portfolio_prices[ticker][direction] <= sign * self._threshold_price[ticker]:
+                if self._num_of_executed_averaging_orders[ticker] == self._num_of_averaging:
                     self._order_manager.add_new_orders(
                         create_unwanted_order(
                             ticker=ticker,
-                            number_of_order=self._num_of_order[ticker.uid]
+                            number_of_order=self._num_of_order[ticker],
+                            number_of_filled_market_orders=self._num_of_executed_averaging_orders[ticker]
                         )
                     )
                 else:
                     self._order_manager.add_new_orders(
                         create_averaging_orders(
                             ticker=ticker,
-                            current_sum_of_market_orders=self._current_sum_of_market_orders[ticker.uid],
-                            number_of_filled_market_orders=self._num_of_executed_averaging_orders[ticker.uid],
-                            number_of_order=self._num_of_order[ticker.uid]
+                            current_sum_of_market_orders=self._current_sum_of_market_orders[ticker],
+                            number_of_filled_market_orders=self._num_of_executed_averaging_orders[ticker],
+                            number_of_order=self._num_of_order[ticker]
                         )
                     )
 
-                self._num_of_order[ticker.uid] += 1
+                self._num_of_order[ticker] += 1
 
                 self._order_manager.cancel_relevant_orders(
                     tickers=[ticker],
@@ -248,4 +288,3 @@ class AvgState(Strategy):
         ## post new orders
 
         self._trade()
-

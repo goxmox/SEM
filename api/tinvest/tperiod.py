@@ -32,6 +32,8 @@ class TPeriod(Period):
             self.instrument_auction = {type_instrument: SessionAuction.CLOSED for type_instrument in InstrumentType}
         else:
             for type_instrument in InstrumentType:
+                self.exchange_closed, self.on_break = False, False
+
                 # checking whether the exchange is open
                 if not working_hours.is_datetime_in_relevant_interval(type_instrument, self.time_period):
                     self.exchange_closed = True

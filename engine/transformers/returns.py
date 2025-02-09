@@ -11,13 +11,16 @@ class Returns(TransformerMixin, BaseEstimator):
             candle_to_price: str = 'close',
             keep_overnight: bool = False,
             day_number: bool = False,
+            keep_vol: bool = True,
     ):
         self.candle_to_price = candle_to_price
         self.feature_names_out_ = ['returns', 'day_number', 'volume']
         self.keep_overnight = keep_overnight
         self.day_number = day_number
+        self.keep_vol = keep_vol
         self.last_candle: pd.DataFrame = None
-        self.name = 'Returns(' + f'candle_to_price={candle_to_price},keep_overnight={str(keep_overnight)}' + ')'
+        self.name = 'Returns(' + f'candle_to_price={candle_to_price},keep_overnight={str(keep_overnight)},' \
+                    + f'keep_vol={str(keep_vol)}' + ')'
 
     def get_feature_names_out(self, input_features=None):
         return self.feature_names_out_
@@ -36,16 +39,25 @@ class Returns(TransformerMixin, BaseEstimator):
         self.last_candle = X[-1:]
 
         if self.candle_to_price == 'mean':
-            price = np.log((1 / 2 * (X['high'] + X['low'])).to_frame())
+            price = np.log(((X['high'] + X['low']) / 2).to_frame())
             price['day_start'] = X['day_number']
-        else:
+        elif self.candle_to_price in ['open', 'high', 'low', 'close']:
             price = np.log(X[self.candle_to_price].to_frame())
             price['day_start'] = X['day_number']
 
-        returns = price.diff()
-        returns['day_number'] = X['day_number']
-        returns['volume'] = X['volume']
-        returns.rename(columns={self.candle_to_price: 'returns'}, inplace=True)
+        if self.candle_to_price != 'two_way':
+            returns = price.diff()
+            returns['day_number'] = X['day_number']
+            returns['volume'] = X['volume']
+            returns.rename(columns={self.candle_to_price: 'returns'}, inplace=True)
+        else:
+            returns = np.log(X[['high', 'low']])
+            returns['day_start'] = X['day_number'].diff()
+            returns['day_number'] = X['day_number']
+            returns['high'] -= np.log(X['close'].shift(periods=1))
+            returns['low'] -= np.log(X['close'].shift(periods=1))
+            returns['volume'] = X['volume']
+
         if not self.keep_overnight:
             returns = returns[returns['day_start'] == 0]
         else:
@@ -54,6 +66,9 @@ class Returns(TransformerMixin, BaseEstimator):
 
         if not self.day_number:
             del returns['day_number']
+
+        if not self.keep_vol:
+            del returns['volume']
 
         return returns
 

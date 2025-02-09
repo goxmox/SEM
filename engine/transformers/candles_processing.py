@@ -4,6 +4,7 @@ import pandas as pd
 from engine.schemas.datatypes import Ticker, Broker
 from engine.schemas.enums import SessionPeriod
 from sklearn.base import BaseEstimator, TransformerMixin
+from typing import Union
 
 
 def combine_time_timedelta(time_: time, delta: timedelta) -> time:
@@ -384,7 +385,10 @@ class RemoveZeroActivityCandles(TransformerMixin, BaseEstimator):
     def fit(self, X):
         return self
 
-    def transform(self, X: pd.DataFrame):
+    def transform(self, X: Union[pd.DataFrame, list[pd.DataFrame]]):
+        if isinstance(X, list):
+            X = pd.concat(X)
+
         return X[X['volume'] != 0]
 
     def save_model(self):

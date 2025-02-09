@@ -21,11 +21,13 @@ class Strategy(ABC):
         self._sessions = sessions
         self._additional_open_to_trading_parameters = additional_open_to_trading_parameters
         self.tickers_collection: list[Ticker] = None
-        self.portfolio_prices: dict[str, float]
-        self.portfolio_lots: dict[str, int]
+        self.portfolio_prices: dict[Ticker, dict[str, float]]
+        self.portfolio_lots: dict[Ticker, int] = {}
         self._order_manager: OrderManager = None
         self._tickers_for_candle_fetching = None
         self._selected_tickers_to_trade: set = set()
+        self._selected_tickers_to_buy: set = set()
+        self._selected_tickers_to_sell: set = set()
         self.types_instruments = None
 
     # in _update these two methods should be called before calling _compute_portfolio or _upload_candles
@@ -37,35 +39,32 @@ class Strategy(ABC):
         for ticker in self._tickers_for_candle_fetching:
             self._services.get_candles(ticker)
 
-    def _get_new_prices(self, depth=0) -> dict[str, dict[str, np.array]]:
+    def _get_new_prices(self, depth=1) -> dict[str, dict[str, np.array]]:
         prices = {}
 
         for ticker in self.tickers_collection:
-            order_book = self._services.market_data.get_order_book(instrument_id=ticker.uid, depth=1)
-            bid = [order_book.bids[i].price for i in range(depth+1)]
-            ask = [order_book.asks[i].price for i in range(depth+1)]
+            order_book = self._services.market_data.get_order_book(instrument_id=ticker.uid, depth=depth)
+            bid = [order_book.bids[i].price for i in range(depth)]
+            ask = [order_book.asks[i].price for i in range(depth)]
 
-            prices[ticker.uid] |= {'to_buy': np.array(bid), 'to_sell': np.array(ask)}
+            prices[ticker] = {'to_buy': np.array(bid), 'to_sell': np.array(ask)}
 
         return prices
 
     @abstractmethod
-    def _determine_signs(self, new_data=None):
+    def _determine_lots(self, ticker: Ticker):
         pass
 
     @abstractmethod
-    def _determine_lots(self, portfolio_of_signs, new_data=None):
+    def _set_portfolio_prices(self, new_data) -> dict[Ticker, dict[str, float]]:
         pass
 
-    @abstractmethod
-    def _set_portfolio_prices(self, new_data) -> dict[str, float]:
-        pass
-
-    def _compute_portfolio(self):
+    def _compute_portfolio_prices(self):
         new_prices = self._get_new_prices()
-
         self.portfolio_prices = self._set_portfolio_prices(new_prices)
-        self.portfolio_lots = self._determine_lots(self._determine_signs(new_prices), new_prices)
+
+    def _compute_portfolio_lots_for_trade(self, ticker: Ticker):
+        self.portfolio_lots[ticker] = self._determine_lots(ticker)
 
     # orders is a list of tuples with a name of an order at index 0, and a metadata at index 1
 
@@ -77,7 +76,7 @@ class Strategy(ABC):
             order_response = self._services.orders.post_order(
                 instrument_id=order.instrument_uid,
                 price=order.price,
-                quantity=order.quantity,
+                quantity=order.lots,
                 direction=order.direction,
                 account_id=order.account_id,
                 order_type=order.order_type
@@ -85,7 +84,8 @@ class Strategy(ABC):
 
             order.status = order_response.execution_report_status
             order.order_id = order_response.order_id
-            order.price = float(order_response.initial_order_price / order.quantity)
+            #order.commission = order_response.commission
+            order.price = float(order_response.initial_order_price)
 
     def execute(self, client: Client, account, tickers: list[Ticker]):
         if not self._executed:
@@ -93,15 +93,16 @@ class Strategy(ABC):
             self._services = client.services
             self._period = client.period
             self._account = client.get_account(account)
-            self._cash = client.get_available_balance(self._account) * self._cash_share
             self.tickers_collection = tickers
             self._tickers_for_candle_fetching = tickers
             self.types_instruments = list(set([ticker.type_instrument for ticker in self.tickers_collection]))
             self._order_manager = OrderManager(
                 client=client,
-                account=account,
+                account=self._account,
                 tickers_collection=self.tickers_collection
             )
+
+        self._cash = client.get_available_balance(self._account) * self._cash_share
 
         self.ongoing_trading = client.ready_to_trade(self._sessions, self.types_instruments,
                                                      **self._additional_open_to_trading_parameters)

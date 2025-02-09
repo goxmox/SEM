@@ -65,7 +65,7 @@ class TradeAndHold(Strategy):
             LocalOrder(
                 order_name='initial',
                 price=self.portfolio_prices[0],
-                quantity=self.portfolio_lots[0],
+                lots=self.portfolio_lots[0],
                 direction=direction,
                 instrument_uid=self.tickers[0].uid,
                 order_type=OrderType.ORDER_TYPE_MARKET,
@@ -75,7 +75,7 @@ class TradeAndHold(Strategy):
             LocalOrder(
                 order_name='desired',
                 price=desired_price,
-                quantity=self.portfolio_lots[0],
+                lots=self.portfolio_lots[0],
                 direction=opposite_direction,
                 instrument_uid=self.tickers[0].uid,
                 order_type=OrderType.ORDER_TYPE_LIMIT,
@@ -87,7 +87,7 @@ class TradeAndHold(Strategy):
             LocalOrder(
                 order_name='undesired',
                 price=undesired_price,
-                quantity=self.portfolio_lots[0],
+                lots=self.portfolio_lots[0],
                 direction=opposite_direction,
                 instrument_uid=self.tickers[0].uid,
                 order_type=OrderType.ORDER_TYPE_MARKET,

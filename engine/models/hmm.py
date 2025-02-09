@@ -4,6 +4,7 @@ from pomegranate.distributions import Normal, DiracDelta
 from hmmlearn.hmm import GaussianHMM
 import pandas as pd
 import numpy as np
+import scipy as sc
 import torch
 
 
@@ -219,12 +220,12 @@ class HMMLearn(GaussianHMM, HMMReturnsMixin):
         p = self._compute_log_likelihood(X)
 
         for t in range(X.shape[0]):
-            logp = float(torch.logsumexp(self.forward_prob, dim=0))
+            logp = sc.special.logsumexp(self.forward_prob, axis=0)
             self.forward_prob = np.log(
                 np.exp(self.posterior_prob).reshape(1, -1) @ self.transmat_
-            ) + logp + p
+            ) + logp + p[t, :]
             self.forward_prob = self.forward_prob.reshape(-1)
-            self.posterior_prob = self.forward_prob - float(torch.logsumexp(self.forward_prob, dim=0))
+            self.posterior_prob = self.forward_prob - sc.special.logsumexp(self.forward_prob, axis=0)
 
     def forecast(self, h=1):
         f = np.log(np.exp(self.posterior_prob) @ np.linalg.matrix_power(self.transmat_, h))

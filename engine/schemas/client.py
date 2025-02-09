@@ -94,7 +94,7 @@ class Services(ABC):
             last_cached_candle = last_cached_candle.copy()
 
             last_day_number = last_cached_candle.iloc[0]['day_number']
-            e
+
             del last_cached_candle['day_number']
             last_cached_candle = last_cached_candle.reset_index()
         else:
@@ -298,7 +298,7 @@ class PostOrderResponse(ABC):
     execution_report_status: OrderExecutionReportStatus
     order_id: str
     initial_order_price: Decimal
-
+    commission: Decimal
 
 @dataclass
 class CancelOrderResponse(ABC):

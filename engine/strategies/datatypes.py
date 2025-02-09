@@ -20,7 +20,6 @@ class OrderManager:
     ):
         for order in orders:
             order.price = self.client.price_correction(order.price, order.ticker)
-            order.quantity = self.client.lots_correction(order.quantity, order.ticker)
             order.order_name += f'_{order.ticker.ticker_sign}'
 
             self.orders.append(order)
@@ -123,9 +122,10 @@ class OrderManager:
 
         self.transactions |= {order.order_id:
                                    {'price': direction * order.price,
-                                    'quantity': order.quantity,
+                                    'quantity': order.lots,
                                     'commission': order.commission,
-                                    'total': direction * order.price * order.quantity
+                                    'total': direction * order.price * order.lots
+                                             * order.ticker.lot
                                     }}
 
 
@@ -134,7 +134,7 @@ class LocalOrder:
     order_name: str
     order_id: str
     price: float
-    quantity: int
+    lots: int
     direction: OrderDirection
     instrument_uid: str
     ticker: Ticker

@@ -17,6 +17,16 @@ import os
 
 LocalCandlesUploader.broker = t_invest
 
+argv = True
+
+if argv:
+    n_components = int(sys.argv[2])
+    n_fits = int(sys.argv[1])
+else:
+    n_components = 4
+    n_fits = 10
+
+
 # tickers list
 tickers = ['SBER', 'VTBR', 'MGNT', 'LKOH', 'MOEX', 'MTSS', 'MVID', 'RUAL', 'TATN', 'YDEX']
 tick = TTicker(tickers[0])
@@ -26,8 +36,8 @@ t = datetime(year=2024, month=12, day=1).replace(tzinfo=timezone.utc)
 
 # model fitting
 model = HMMLearn(
-    n_components=int(sys.argv[1]),
-    covariance_type='diag',
+    n_components=n_components,
+    covariance_type='full',
     verbose=True,
     tol=500,
     n_iter=1000,
@@ -36,20 +46,20 @@ model = HMMLearn(
 pipe = DataTransformerBroker(tick).make_pipeline(
     [
         RemoveZeroActivityCandles(),
-        Returns(keep_overnight=False),
+        Returns(keep_overnight=False, day_number=False, candle_to_price='two_way', keep_vol=False),
         StandardScaler(with_mean=False),
-        model
-     ],
+        model,
+    ],
     end_date=t
 )
 
-pipe.fit(tries=3, show_score=True)
-print(pipe.fetch_data('Returns').to_numpy())
+pipe.fit(tries=n_fits, show_score=True)
 X = pipe.final_datanode.data.to_numpy()
 
-pipe.model.determine_states(X, pipe.fetch_data('Returns')['returns'].to_numpy())
+pipe.model.determine_states(X, pipe.fetch_data('Returns').sum(axis=1).to_numpy())
 state_dist = pipe.model.states_map
 print(state_dist)
+print(pipe.model.means_)
 bull_bear = 0
 
 for state in state_dist:
@@ -59,32 +69,11 @@ for state in state_dist:
 bic = pipe.model.bic(X)
 aic = pipe.model.aic(X)
 score = pipe.model.score(X)
-ans = f'Number of states={sys.argv[1]}\nAIC: {aic}\nBIC: {bic}\nScore: {score}\nBear+Bull: {bull_bear}'
+ans = f'Number of states={n_components}\nAIC: {aic}\nBIC: {bic}\nScore: {score}\nBear+Bull: {bull_bear}'
 
 print(ans)
 
-with open(os.getcwd() + f'/ans_{2}_{datetime.now()}.txt', 'w') as log:
+with open(os.getcwd() + f'/ans_{n_components}_{datetime.now()}.txt', 'w') as log:
     log.write(ans)
 
-#pipe.save_model()
-
-# backtest
-
-mock_client_config = {
-    'period': t
-}
-
-strategy = AvgState(
-    [
-        RemoveZeroActivityCandles(),
-        Returns(keep_overnight=False),
-        StandardScaler(with_mean=False),
-        model
-     ],
-)
-
-main(
-    strategies=[strategy],
-    mock_client_config=mock_client_config,
-    tickers_collection=['SBER']
-)
+pipe.save_model()

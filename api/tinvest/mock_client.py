@@ -5,6 +5,7 @@ import engine.schemas.datatypes
 from api.tinvest.tperiod import TPeriod
 from api.tinvest.tticker import TTicker
 from api.tinvest.datatypes import SessionAuction
+from api.tinvest.utils import to_quotation
 import api.tinvest.tclient as t_api
 from api.broker_list import t_invest
 import engine.schemas.client as local_api
@@ -32,35 +33,27 @@ class TMockClient(local_api.Client):
         self.services: MockClientServices = None
         self._cash = cash
 
-        self.sign_to_tickers = {ticker.ticker_sign: ticker for ticker in tickers}
         self.uid_to_tickers = {ticker.uid: ticker for ticker in tickers}
 
         self.candle_data: dict = {
-            ticker.uid:
+            ticker:
                 LocalCandlesUploader.upload_candles(ticker=ticker) for ticker in tickers
         }
-        self._candle_data_iterators = {ticker_uid: self.candle_data[ticker_uid].T.items()
-                                       for ticker_uid in self.candle_data.keys()}
-        self.candles = {ticker_uid: {} for ticker_uid in self.candle_data.keys()}
-        self.candles_idx = {ticker_uid: 0 for ticker_uid in self.candle_data.keys()}
+        self.current_candles = {ticker: {} for ticker in self.candle_data.keys()}
+        self.last_candles_idx = {ticker: 0 for ticker in self.candle_data.keys()}
 
-        for ticker_uid, candles_df in self.candle_data.items():
-            candle = next(self._candle_data_iterators[ticker_uid])
+        for ticker, candles_df in self.candle_data.items():
+            self.last_candles_idx[ticker] = (candles_df.index <= self.period.time_period).argmin() - 1
+            self.current_candles[ticker] = candles_df.iloc[self.last_candles_idx[ticker]].to_dict()
 
-            while candle[0] < self.period.time_period:
-                candle = next(self._candle_data_iterators[ticker_uid])
-                self.candles_idx[ticker_uid] += 1
+        for ticker in self.candle_data.keys():
+            LocalCandlesUploader.candles_in_memory[ticker] = \
+                self.candle_data[ticker].iloc[:self.last_candles_idx[ticker] + 1]
 
-            self.candles[ticker_uid] = candle[1].to_dict()
+            LocalCandlesUploader.last_candles[ticker] = \
+                self.candle_data[ticker].iloc[self.last_candles_idx[ticker]:self.last_candles_idx[ticker] + 1]
 
-        for ticker_uid in self.candle_data.keys():
-            LocalCandlesUploader.candles_in_memory[self.uid_to_tickers[ticker_uid].ticker_sign] =\
-                self.candle_data[ticker_uid].iloc[:self.candles_idx[ticker_uid]]
-
-            LocalCandlesUploader.last_candles[self.uid_to_tickers[ticker_uid].ticker_sign] =\
-                self.candle_data[ticker_uid].iloc[self.candles_idx[ticker_uid] - 1:self.candles_idx[ticker_uid]]
-
-            LocalCandlesUploader.candles_start_dates[self.uid_to_tickers[ticker_uid].ticker_sign] = \
+            LocalCandlesUploader.candles_start_dates[ticker] = \
                 self.period.time_period + timedelta(minutes=1)
 
     def __enter__(self):
@@ -80,8 +73,8 @@ class TMockClient(local_api.Client):
 
             if order.status == OrderExecutionReportStatus.EXECUTION_REPORT_STATUS_NEW:
                 p = round(order.price, 9)
-                low = round(Decimal(self.candles[order.instrument_id]['low']), 9)
-                high = round(Decimal(self.candles[order.instrument_id]['high']), 9)
+                low = round(Decimal(self.current_candles[ticker]['low']), 9)
+                high = round(Decimal(self.current_candles[ticker]['high']), 9)
 
                 if ((order.direction == OrderDirection.ORDER_DIRECTION_BUY and p >= low)
                         or (order.direction == OrderDirection.ORDER_DIRECTION_SELL and p <= high)):
@@ -94,11 +87,12 @@ class TMockClient(local_api.Client):
                     self._cash += float(order.quantity * p * ticker.lot
                                         * (-1 if order.direction == OrderDirection.ORDER_DIRECTION_BUY else 1))
 
-        for ticker_uid, iter_candles in self._candle_data_iterators.items():
-            if self.period.instrument_session[self.uid_to_tickers[ticker_uid].type_instrument] == SessionPeriod.CLOSED:
+        for ticker, candles_df in self.candle_data.items():
+            if self.period.instrument_session[ticker.type_instrument] == SessionPeriod.CLOSED:
                 continue
-            self.candles[ticker_uid] = next(iter_candles)[1].to_dict()
-            self.candles_idx[ticker_uid] += 1
+
+            self.last_candles_idx[ticker] += 1
+            self.current_candles[ticker] = candles_df.iloc[self.last_candles_idx[ticker]].to_dict()
 
         self.period.next_period(update_with_cur_time=False)
 
@@ -134,7 +128,7 @@ class MockClientServices(local_api.Services):
         self.client = client
         self.orders: MockOrders = MockOrders(self)
         self.market_data: MockMarketData = MockMarketData(self)
-        self.last_candle_idx: dict[str, int] = client.candles_idx
+        self.last_cached_candles_idx: dict[str, int] = client.last_candles_idx.copy()
 
     def get_instruments(self):
         pass
@@ -144,11 +138,15 @@ class MockClientServices(local_api.Services):
             ticker: TTicker,
             start_date: Optional[datetime] = None
     ):
-        new_candles = self.client.candle_data[
-                      self.last_candle_idx[ticker.uid]: self.client.candles_idx[ticker.ticker_sign]
+        new_candles = self.client.candle_data[ticker].iloc[
+                      self.last_cached_candles_idx[ticker] + 1: self.client.last_candles_idx[ticker] + 1
                       ]
 
+        self.last_cached_candles_idx[ticker] = self.client.last_candles_idx[ticker]
+
         LocalCandlesUploader.save_new_candles(new_candles, ticker)
+
+        return len(new_candles) > 0
 
     def _candles_writer(
             self,
@@ -204,7 +202,8 @@ class MockOrders(MockService, local_api.OrdersService):
 
         return PostOrderResponse(
             order_id=str(self.id - 1),
-            execution_report_status=OrderExecutionReportStatus.EXECUTION_REPORT_STATUS_NEW
+            execution_report_status=OrderExecutionReportStatus.EXECUTION_REPORT_STATUS_NEW,
+            initial_order_price=price
         )
 
     def cancel_order(
@@ -257,10 +256,15 @@ class MockMarketData(MockService, local_api.MarketDataService):
             instrument_id: str = "",
             **kwargs
     ) -> local_api.GetOrderBookResponse:
+        ticker = self.client.uid_to_tickers[instrument_id]
+
+        mid_price = (self.client.current_candles[ticker]['low'] + self.client.current_candles[ticker]['high']) / 2
+        open_price = self.client.current_candles[ticker]['open']
+
         return local_api.GetOrderBookResponse(
-            bids=[local_api.Order(price=self.client.candles[instrument_id]['low'],
+            bids=[local_api.Order(price=open_price,
                                   quantity=1000000)],
-            asks=[local_api.Order(price=self.client.candles[instrument_id]['high'],
+            asks=[local_api.Order(price=open_price,
                                   quantity=1000000)],
             depth=1,
             instrument_uid=''

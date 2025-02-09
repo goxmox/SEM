@@ -5,6 +5,7 @@ import os
 import pandas as pd
 from engine.schemas.enums import InstrumentType
 from engine.schemas.constants import candle_path
+from decimal import Decimal
 
 
 @dataclass
@@ -16,6 +17,7 @@ class Broker:
     working_weekends: list[date]
     holidays: list[date]
     session_type: 'ExchangeIntervalTree'
+    commission: Decimal
 
 
 class Period(ABC):
@@ -38,24 +40,11 @@ class Ticker(ABC):
     lot: int = None
     type_instrument = None
 
-    def get_candles(self):
-        if os.path.isfile(candle_path + f'{self.ticker_sign}/{self.ticker_sign}.csv'):
-            candles = pd.read_csv(candle_path + f'{self.ticker_sign}/{self.ticker_sign}.csv')
-        else:
-            raise OSError(f'No {self.ticker_sign}.csv file')
+    def __eq__(self, other):
+        return (self.uid == other.uid) and (self.ticker_sign == self.ticker_sign)
 
-        table_columns = [column.lower() for column in candles.columns]
-
-        if 'date' in table_columns:
-            candles['time'] = candles['date']
-            del candles['date']
-        elif 'time' not in table_columns:
-            raise ValueError('Column names must contain either "time" or "date" column.')
-
-        candles['time'] = pd.to_datetime(candles['time'], format='%Y-%m-%d %H:%M:%S%z')
-        candles = candles.set_index('time')
-
-        return candles
+    def __hash__(self):
+        return hash((self.uid, self.ticker_sign))
 
 
 # ----------------- data structures for schedules of exchanges-related information

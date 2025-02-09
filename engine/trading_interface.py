@@ -27,24 +27,21 @@ class TradingInterface:
 
             while len(self._strategies) > number_of_inactive_strategies:
                 print(client.period.time_period)
+
                 start = time()
 
                 for strategy in self._strategies:
                     if not strategy.active:
                         continue
 
-                    #try:
                     strategy.execute(client, self._account, tickers_collection)
-                    #except Exception as e:
-                    #    print(e)
-                    #    strategy.terminate()
-
-                    print(strategy._order_manager.orders)
+                    print(client._cash)
 
                     if not strategy.active:
                         number_of_inactive_strategies += 1
 
-                sleep(max(client.period_duration - (time() - start), 0))
+                #sleep(max(client.period_duration - (time() - start), 0))
+                #sleep(0.05)
 
                 try:
                     client.next_period()
