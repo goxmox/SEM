@@ -117,16 +117,32 @@ class OrderManager:
 
         return filled_orders
 
+    def profit_from_relevant_orders(
+            self,
+            tickers: list[Ticker] = None,
+            subname: str = None,
+    ) -> float:
+        orders = self.select_relevant_orders(tickers=tickers, subname=subname)
+        profit = 0
+
+        for order in orders:
+            direction = -1 if order.direction == OrderDirection.ORDER_DIRECTION_BUY else 1
+
+            if order.status == OrderExecutionReportStatus.EXECUTION_REPORT_STATUS_FILL:
+                profit += direction * order.price * order.lots * order.ticker.lot
+
+        return profit
+
     def record_transaction(self, order: 'LocalOrder'):
-        direction = 1 if order.direction == OrderDirection.ORDER_DIRECTION_BUY else -1
+        direction = -1 if order.direction == OrderDirection.ORDER_DIRECTION_BUY else 1
 
         self.transactions |= {order.order_id:
-                                   {'price': direction * order.price,
-                                    'quantity': order.lots,
-                                    'commission': order.commission,
-                                    'total': direction * order.price * order.lots
-                                             * order.ticker.lot
-                                    }}
+                                  {'price': direction * order.price,
+                                   'quantity': order.lots,
+                                   'commission': order.commission,
+                                   'total': direction * order.price * order.lots
+                                            * order.ticker.lot
+                                   }}
 
 
 @dataclass

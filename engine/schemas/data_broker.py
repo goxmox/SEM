@@ -131,7 +131,7 @@ class DataTransformerBroker:
 
         joblib.dump(data_list, path)
 
-    def load_model(self):
+    def load_model(self, load_data=False):
         pickled_models = []
 
         path = candle_path + LocalCandlesUploader.broker.broker_name
@@ -166,8 +166,16 @@ class DataTransformerBroker:
 
         self.final_datanode.load_model(data_list[1:])
 
+        if load_data:
+            self.compute(end_date=self.end_date)
+
         if self.end_date > self.fit_date:
-            self.model.update(self.compute(fit_date=self.fit_date, end_date=self.end_date))
+            if load_data:
+                new_data = self.final_datanode.data[self.final_datanode.data.index > self.fit_date]
+            else:
+                new_data = self.compute(fit_date=self.fit_date, end_date=self.end_date)
+
+            self.model.update(new_data)
 
         return self
 

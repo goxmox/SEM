@@ -1,6 +1,6 @@
 from engine.strategies.strategy import Strategy
 from engine.strategies.datatypes import LocalOrder
-from engine.schemas.enums import SessionPeriod, OrderType, OrderDirection
+from engine.schemas.enums import SessionPeriod, OrderType, OrderDirection, OrderExecutionReportStatus
 from engine.schemas.datatypes import Ticker
 from engine.schemas.data_broker import DataTransformerBroker
 from engine.transformers.returns import Returns
@@ -49,6 +49,8 @@ class AvgState(Strategy):
         self._states_to_buy = states_to_buy
         self._states_to_sell = states_to_sell
 
+        self.profits = []
+
     def _determine_lots(self, ticker: Ticker):
         rate = max(self._return_threshold_up, self._return_threshold_down)
         # share = (1 / self._max_num_of_tickers
@@ -81,6 +83,8 @@ class AvgState(Strategy):
         return prices
 
     def _deselect_ticker(self, ticker: Ticker):
+        self.profits.append(self._order_manager.profit_from_relevant_orders(tickers=[ticker]))
+
         self._order_manager.delete_relevant_orders(tickers=[ticker])
         self._selected_tickers_to_trade.remove(ticker)
 
@@ -97,26 +101,6 @@ class AvgState(Strategy):
 
     def _update(self):
         # ----- initialization ----------
-
-        def redetermine_states(model):
-            m_plus = model.means_[:, 0]
-            m_minus = model.means_[:, 1]
-            var_plus = model.covars_[:, 0, 0]
-            var_minus = model.covars_[:, 1, 1]
-            covs = model.covars_[:, 0, 1]
-
-            t = (m_plus + m_minus) / np.sqrt(var_plus + var_minus + 2 * covs)
-            print(t)
-
-            for s in range(len(t)):
-                if t[s] > 0.8:
-                    model.states_map[s] = 'bull'
-                elif t[s] < -0.8:
-                    model.states_map[s] = 'bear'
-                else:
-                    model.states_map[s] = 'volatile'
-
-            print(model.states_map)
 
         if not self._executed:
             self._num_of_executed_averaging_orders = {ticker: 0 for ticker in self.tickers_collection}
@@ -213,9 +197,6 @@ class AvgState(Strategy):
                 ).make_pipeline(self._pipeline, end_date=self._period.time_period).load_model()
                 for ticker in self.tickers_collection
             }
-
-            print(self._ticker_pipelines[self.tickers_collection[0]].model.states_map)
-            redetermine_states(self._ticker_pipelines[self.tickers_collection[0]].model)
 
             self._executed = True
 

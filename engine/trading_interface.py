@@ -24,15 +24,16 @@ class TradingInterface:
     ):
         with client_constructor(**client_config) as client:
             number_of_inactive_strategies = 0
+            starting_cash = client._cash
 
             while len(self._strategies) > number_of_inactive_strategies:
-                #print(client.period.time_period)
-                if (client.period.time_period.minute == 0):
-                    print(client._cash)
-
                 start = time()
 
                 for strategy in self._strategies:
+                    if (client.period.time_period.hour == 0) and (client.period.time_period.minute == 0):
+                   # if (client.period.time_period.minute == 0):
+                        print(round(100 * sum(strategy.profits) / (starting_cash * strategy._cash_share), 3))
+
                     if not strategy.active:
                         continue
 

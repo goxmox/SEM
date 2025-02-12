@@ -14,60 +14,15 @@ class HMMReturnsMixin:
 
     def determine_states(
             self,
-            X,
-            returns,
-            bear_m=-1,
-            bull_m=1,
-            calm_s=4
+            X=None,
+            returns=None,
+            returns_type='close',
+            t_threshold=1
     ):
-        states = self.decode(X)
-        n_states = len(np.unique(states))
+        if (X is not None) and (returns is not None):
+            states = self.decode(X)
+            n_states = len(np.unique(states))
 
-        moments = []
-
-        for s in range(n_states):
-            state_returns = returns[states == s]
-
-            moments.append([state_returns.mean(), state_returns.std()])
-
-        moments = np.array(moments) * 10000
-        means, stds = moments[:, 0], moments[:, 1]
-
-        self.states_map = []
-
-        for i in range(n_states):
-            if means[i] > bull_m:
-                self.states_map.append('bull')
-            elif means[i] < bear_m:
-                self.states_map.append('bear')
-            elif stds[i] < calm_s:
-                self.states_map.append('calm')
-            else:
-                self.states_map.append('volatile')
-
-    def forecast_next_state(self, h=1):
-        f = self.forecast(h)
-        state = np.argmax(f)
-
-        return self.states_map[state]
-
-    def state_share(
-            self,
-            X,
-            returns,
-            state_type='profitable',
-            bear_m=-1,
-            bull_m=1,
-            calm_s=4
-    ):
-        state_share = 0
-        states = self.decode(X)
-        n_states = len(np.unique(states))
-
-        if returns is None:
-            means = self.means()
-            stds = self.stds()
-        else:
             moments = []
 
             for s in range(n_states):
@@ -75,24 +30,33 @@ class HMMReturnsMixin:
 
                 moments.append([state_returns.mean(), state_returns.std()])
 
-            moments = np.array(moments) * 10000
-            means, stds = moments[:, 0], moments[:, 1]
+            moments = np.array(moments)
+            means, SEs = moments[:, 0], moments[:, 1]
+        else:
+            if returns_type == 'two_way':
+                means = self.means_[:, 0] + self.means_[:, 1]
+                SEs = np.sqrt(self.covars_[:, 0, 0] + self.covars_[:, 1, 1] + 2 * self.covars_[:, 0, 1])
+            else:
+                means = self.means_[:, 0]
+                SEs = np.sqrt(self.covars_[:, 0, 0])
 
-        if (state_type == 'bear') or (state_type == 'profitable') or (state_type == 'informative'):
-            state_share += np.sum(np.isin(states, np.argwhere(means < bear_m))) / states.shape[0]
-        if (state_type == 'bull') or (state_type == 'profitable') or (state_type == 'informative'):
-            state_share += np.sum(np.isin(states, np.argwhere(means > bull_m))) / states.shape[0]
-        if (state_type == 'calm') or (state_type == 'informative'):
-            state_share += (
-                    np.sum(
-                        np.isin(
-                            states,
-                            np.argwhere((bear_m <= means) & (means <= bull_m) & (stds <= calm_s))
-                        )
-                    ) / states.shape[0]
-            )
+        t = means / SEs
 
-        return state_share
+        self.states_map = []
+
+        for t_stat in t:
+            if t_stat > t_threshold:
+                self.states_map.append('bull')
+            elif t_stat < -t_threshold:
+                self.states_map.append('bear')
+            else:
+                self.states_map.append('indeterminate')
+
+    def forecast_next_state(self, h=1):
+        f = self.forecast(h)
+        state = np.argmax(f)
+
+        return self.states_map[state]
 
 
 class HMMPomegranate(DenseHMM):
@@ -202,18 +166,19 @@ class HMMLearn(GaussianHMM, HMMReturnsMixin):
         return super().decode(X, lengths=lengths, algorithm=algorithm)[1]
 
     def fit(self, X, lengths=None):
-        super().fit(X, lengths=lengths)
+        n_tries = 0
+
+        while n_tries < 3:
+            try:
+                super().fit(X, lengths=lengths)
+                n_tries = 3
+            except ValueError:
+                n_tries += 1
 
         self.posterior_prob = self.predict_proba(X, lengths=lengths)[-1, :]
         self.forward_prob = self.posterior_prob + self.score(X, lengths=lengths)
 
         return self
-
-    def means(self):
-        return self.means_[:, 0]
-
-    def stds(self):
-        return np.sqrt(self.covars_[:, 0, 0])
 
     def update(self, X: pd.DataFrame):
         X = X.to_numpy()
