@@ -145,11 +145,6 @@ class TServices(t_services.Services, local_api.Services):
 
     def get_instruments(self):
         for instrument_type in InstrumentType:
-            if os.path.isfile(
-                    instrument_path + f'{t_invest.broker_name}\\{instrument_type.name}.csv'
-            ):
-                continue
-
             if instrument_type == InstrumentType.STOCK:
                 unitnano_fields = ['min_price_increment', 'nominal', 'dshort_min', 'dlong_min',
                                    'dshort', 'dlong', 'kshort', 'klong']

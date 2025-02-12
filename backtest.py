@@ -41,7 +41,7 @@ if __name__ == '__main__':
         model = DataTransformerBroker(TTicker(tick)).make_pipeline(
             pipe,
             end_date=t
-        ).load_model(load_data=True)
+        ).load_model(load_data=False)
 
         # X = model.final_datanode.data.to_numpy()
         # model.model.determine_states(X, model.fetch_data('Returns').sum(axis=1).to_numpy())
@@ -49,6 +49,8 @@ if __name__ == '__main__':
         model.model.determine_states(returns_type='two_way', t_threshold=1)
 
         model.save_model()
+
+    print(model.model.states_map)
 
     mock_client_config = {
         'period': t

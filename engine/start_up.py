@@ -24,7 +24,8 @@ def start_up(
         with TClient(**client_config) as client:
             client.services.get_instruments()
 
-    tickers_collection = [TTicker(ticker) for ticker in tickers_collection]
+    if tickers_collection is not None:
+        tickers_collection = [TTicker(ticker) for ticker in tickers_collection]
 
     if mock:
         mock_client_config['tickers'] = tickers_collection

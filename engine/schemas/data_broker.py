@@ -175,7 +175,8 @@ class DataTransformerBroker:
             else:
                 new_data = self.compute(fit_date=self.fit_date, end_date=self.end_date)
 
-            self.model.update(new_data)
+            if len(new_data) > 0:
+                self.model.update(new_data)
 
         return self
 
@@ -267,7 +268,9 @@ class DataNode:
             if self.parent.data is None:
                 self.parent.compute(fit_date=fit_date, end_date=end_date)
 
-            if (self.data is None) and (not self.fitted):
+            if len(self.parent.data) == 0:
+                self.data = pd.DataFrame()
+            elif (self.data is None) and (not self.fitted):
                 self.data = self.transformer.fit_transform(self.parent.data)
                 self.fitted = True
             elif self.data is None:
