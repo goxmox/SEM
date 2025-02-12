@@ -25,6 +25,9 @@ class HMMReturnsMixin:
 
             moments = []
 
+            if returns_type == 'two_way':
+                returns = np.sum(returns, axis=1)
+
             for s in range(n_states):
                 state_returns = returns[states == s]
 
@@ -186,9 +189,12 @@ class HMMLearn(GaussianHMM, HMMReturnsMixin):
 
         for t in range(X.shape[0]):
             logp = sc.special.logsumexp(self.forward_prob, axis=0)
+
+            p_max = np.max(self.posterior_prob)
+
             self.forward_prob = np.log(
-                np.exp(self.posterior_prob).reshape(1, -1) @ self.transmat_
-            ) + logp + p[t, :]
+                np.exp(self.posterior_prob - p_max).reshape(1, -1) @ self.transmat_
+            ) + logp + p[t, :] + p_max
             self.forward_prob = self.forward_prob.reshape(-1)
             self.posterior_prob = self.forward_prob - sc.special.logsumexp(self.forward_prob, axis=0)
 

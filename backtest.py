@@ -24,33 +24,18 @@ if __name__ == '__main__':
     tickers_collection = ['SBER']
 
     model = HMMLearn(
-        n_components=10,
+        n_components=16,
         covariance_type='full',
     )
 
+    candle_to_price = 'two_way'
+
     pipe = [
         RemoveZeroActivityCandles(),
-        Returns(keep_overnight=False, day_number=False, candle_to_price='two_way', keep_vol=False),
+        Returns(keep_overnight=False, day_number=False, candle_to_price=candle_to_price, keep_vol=False),
         StandardScaler(with_mean=False),
         model,
     ]
-
-    # setup states_map (configure hyperparameters)
-
-    for tick in tickers_collection:
-        model = DataTransformerBroker(TTicker(tick)).make_pipeline(
-            pipe,
-            end_date=t
-        ).load_model(load_data=False)
-
-        # X = model.final_datanode.data.to_numpy()
-        # model.model.determine_states(X, model.fetch_data('Returns').sum(axis=1).to_numpy())
-
-        model.model.determine_states(returns_type='two_way', t_threshold=1)
-
-        model.save_model()
-
-    print(model.model.states_map)
 
     mock_client_config = {
         'period': t
@@ -60,7 +45,10 @@ if __name__ == '__main__':
         AvgState(
             pipeline=pipe,
             cash_share=0.9,
-            num_of_averaging=1
+            num_of_averaging=1,
+            t_threshold=1.1,
+            model_metadata={'returns_type': candle_to_price},
+            states_from_train_data=False
         )
     ]
 

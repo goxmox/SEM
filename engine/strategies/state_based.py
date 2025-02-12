@@ -1,3 +1,5 @@
+from torchgen.executorch.api.et_cpp import returns_type
+
 from engine.strategies.strategy import Strategy
 from engine.strategies.datatypes import LocalOrder
 from engine.schemas.enums import SessionPeriod, OrderType, OrderDirection, OrderExecutionReportStatus
@@ -21,6 +23,9 @@ class AvgState(Strategy):
             num_of_averaging=2,
             states_to_buy=('bull'),
             states_to_sell=('bear'),
+            t_threshold=1,
+            states_from_train_data=False,
+            model_metadata=None,
             sessions=(SessionPeriod.MAIN,),
             **additional_open_to_trading_parameters
     ):
@@ -37,6 +42,9 @@ class AvgState(Strategy):
 
         self._executed = False
         self._pipeline = pipeline
+        self._t_threshold = t_threshold
+        self._states_from_train_data = states_from_train_data
+        self._model_metadata = model_metadata
         self._ticker_pipelines = None
 
         self._num_of_executed_averaging_orders = None
@@ -194,9 +202,27 @@ class AvgState(Strategy):
             self._ticker_pipelines = {
                 ticker: DataTransformerBroker(
                     ticker=ticker
-                ).make_pipeline(self._pipeline, end_date=self._period.time_period).load_model()
+                ).make_pipeline(self._pipeline, end_date=self._period.time_period).load_model(
+                    load_data=self._states_from_train_data)
                 for ticker in self.tickers_collection
             }
+
+            for pipe in self._ticker_pipelines.values():
+                if self._states_from_train_data:
+                    X = pipe.final_datanode.data
+                    returns = pipe.fetch_data('Returns').to_numpy()
+
+                    pipe.model.determine_states(
+                        X=X,
+                        returns=returns,
+                        returns_type=self._model_metadata['returns_type'],
+                        t_threshold=self._t_threshold
+                    )
+                else:
+                    pipe.model.determine_states(
+                        returns_type=self._model_metadata['returns_type'],
+                        t_threshold=self._t_threshold
+                    )
 
             self._executed = True
 
