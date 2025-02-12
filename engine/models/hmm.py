@@ -202,14 +202,7 @@ class HMMLearn(GaussianHMM, HMMReturnsMixin):
         return super().decode(X, lengths=lengths, algorithm=algorithm)[1]
 
     def fit(self, X, lengths=None):
-        fitted = False
-
-        while not fitted:
-            try:
-                super().fit(X, lengths=lengths)
-                fitted = True
-            except np.linalg.LinAlgError:
-                continue
+        super().fit(X, lengths=lengths)
 
         self.posterior_prob = self.predict_proba(X, lengths=lengths)[-1, :]
         self.forward_prob = self.posterior_prob + self.score(X, lengths=lengths)

@@ -75,16 +75,27 @@ class TMockClient(local_api.Client):
                 p = round(order.price, 9)
                 low = round(Decimal(self.current_candles[ticker]['low']), 9)
                 high = round(Decimal(self.current_candles[ticker]['high']), 9)
+                mid = (high + low) / 2
 
-                if ((order.direction == OrderDirection.ORDER_DIRECTION_BUY and p >= low)
-                        or (order.direction == OrderDirection.ORDER_DIRECTION_SELL and p <= high)):
+                if order.order_type == OrderType.ORDER_TYPE_LIMIT:
+                    if ((order.direction == OrderDirection.ORDER_DIRECTION_BUY and p >= low)
+                            or (order.direction == OrderDirection.ORDER_DIRECTION_SELL and p <= high)):
+                        order.status = OrderExecutionReportStatus.EXECUTION_REPORT_STATUS_FILL
+                        order.executed_order_price = p
+                        order.lots_executed = order.quantity
+                        order.executed_commission = Decimal(0)
+                        order.total_order_amount = order.quantity * p * ticker.lot
+
+                        self._cash += float(order.quantity * p * ticker.lot
+                                            * (-1 if order.direction == OrderDirection.ORDER_DIRECTION_BUY else 1))
+                elif order.order_type == OrderType.ORDER_TYPE_MARKET:
                     order.status = OrderExecutionReportStatus.EXECUTION_REPORT_STATUS_FILL
-                    order.executed_order_price = p
+                    order.executed_order_price = mid
                     order.lots_executed = order.quantity
                     order.executed_commission = Decimal(0)
-                    order.total_order_amount = order.quantity * p * ticker.lot
+                    order.total_order_amount = order.quantity * mid * ticker.lot
 
-                    self._cash += float(order.quantity * p * ticker.lot
+                    self._cash += float(order.quantity * mid * ticker.lot
                                         * (-1 if order.direction == OrderDirection.ORDER_DIRECTION_BUY else 1))
 
         for ticker, candles_df in self.candle_data.items():
@@ -170,6 +181,7 @@ class MockOrder:
     quantity: int
     direction: OrderDirection
     status: OrderExecutionReportStatus
+    order_type: OrderType
     executed_order_price: Decimal
     lots_executed: int
     executed_commission: Decimal
@@ -193,6 +205,7 @@ class MockOrders(MockService, local_api.OrdersService):
                       instrument_id=instrument_id,
                       price=price, quantity=quantity,
                       direction=direction,
+                      order_type=order_type,
                       status=OrderExecutionReportStatus.EXECUTION_REPORT_STATUS_NEW,
                       executed_order_price=None, lots_executed=None,
                       executed_commission=None, total_order_amount=None)

@@ -167,10 +167,7 @@ class DataTransformerBroker:
         self.final_datanode.load_model(data_list[1:])
 
         if self.end_date > self.fit_date:
-            new_data = self.compute(fit_date=self.fit_date, end_date=self.end_date)
-
-            if len(new_data) > 0:
-                self.model.update(new_data)
+            self.model.update(self.compute(fit_date=self.fit_date, end_date=self.end_date))
 
         return self
 
@@ -266,10 +263,7 @@ class DataNode:
                 self.data = self.transformer.fit_transform(self.parent.data)
                 self.fitted = True
             elif self.data is None:
-                if len(self.parent.data) == 0:
-                    self.data = pd.DataFrame([])
-                else:
-                    self.data = self.transformer.transform(self.parent.data)
+                self.data = self.transformer.transform(self.parent.data)
         else:
             if self.data is None:
                 self.data = LocalCandlesUploader.upload_candles(self.ticker)

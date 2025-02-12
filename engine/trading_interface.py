@@ -26,7 +26,9 @@ class TradingInterface:
             number_of_inactive_strategies = 0
 
             while len(self._strategies) > number_of_inactive_strategies:
-                print(client.period.time_period)
+                #print(client.period.time_period)
+                if (client.period.time_period.minute == 0):
+                    print(client._cash)
 
                 start = time()
 
@@ -35,7 +37,6 @@ class TradingInterface:
                         continue
 
                     strategy.execute(client, self._account, tickers_collection)
-                    print(client._cash)
 
                     if not strategy.active:
                         number_of_inactive_strategies += 1

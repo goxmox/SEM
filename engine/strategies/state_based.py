@@ -98,6 +98,26 @@ class AvgState(Strategy):
     def _update(self):
         # ----- initialization ----------
 
+        def redetermine_states(model):
+            m_plus = model.means_[:, 0]
+            m_minus = model.means_[:, 1]
+            var_plus = model.covars_[:, 0, 0]
+            var_minus = model.covars_[:, 1, 1]
+            covs = model.covars_[:, 0, 1]
+
+            t = (m_plus + m_minus) / np.sqrt(var_plus + var_minus + 2 * covs)
+            print(t)
+
+            for s in range(len(t)):
+                if t[s] > 0.8:
+                    model.states_map[s] = 'bull'
+                elif t[s] < -0.8:
+                    model.states_map[s] = 'bear'
+                else:
+                    model.states_map[s] = 'volatile'
+
+            print(model.states_map)
+
         if not self._executed:
             self._num_of_executed_averaging_orders = {ticker: 0 for ticker in self.tickers_collection}
             self._lots_executed = {ticker: 0 for ticker in self.tickers_collection}
@@ -112,7 +132,6 @@ class AvgState(Strategy):
                 number_of_filled_market_orders: int,
                 number_of_order: int
         ):
-            print(self._ticker_state[ticker])
             if ticker in self._selected_tickers_to_buy:
                 direction = OrderDirection.ORDER_DIRECTION_BUY
                 opposite_direction = OrderDirection.ORDER_DIRECTION_SELL
@@ -184,7 +203,6 @@ class AvgState(Strategy):
 
         def forecast_next_state(ticker: Ticker):
             self._ticker_state[ticker] = self._ticker_pipelines[ticker].model.forecast_next_state()
-            print(self._ticker_state[ticker])
 
         # -------- logic ---------------
 
@@ -195,6 +213,9 @@ class AvgState(Strategy):
                 ).make_pipeline(self._pipeline, end_date=self._period.time_period).load_model()
                 for ticker in self.tickers_collection
             }
+
+            print(self._ticker_pipelines[self.tickers_collection[0]].model.states_map)
+            redetermine_states(self._ticker_pipelines[self.tickers_collection[0]].model)
 
             self._executed = True
 
@@ -260,6 +281,11 @@ class AvgState(Strategy):
                 self._threshold_price[ticker] = 0
 
             if sign * self.portfolio_prices[ticker][direction] <= sign * self._threshold_price[ticker]:
+                self._order_manager.cancel_relevant_orders(
+                    tickers=[ticker],
+                    subname='desired'
+                )
+
                 if self._num_of_executed_averaging_orders[ticker] == self._num_of_averaging:
                     self._order_manager.add_new_orders(
                         create_unwanted_order(
@@ -279,11 +305,6 @@ class AvgState(Strategy):
                     )
 
                 self._num_of_order[ticker] += 1
-
-                self._order_manager.cancel_relevant_orders(
-                    tickers=[ticker],
-                    subname='desired'
-                )
 
         ## post new orders
 
