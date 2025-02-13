@@ -24,9 +24,20 @@ class TMockClient(local_api.Client):
             self,
             period: datetime,
             tickers: list[TTicker],
+            bid_orderbook_price: str = 'low',
+            ask_orderbook_price: str = 'high',
+            market_order_price: str = 'open',
+            buy_price_end_period: str = 'low',
+            sell_price_end_period: str = 'high',
             cash: float = 100000
     ):
         super().__init__(t_invest)
+
+        self.bid_orderbook_price = bid_orderbook_price
+        self.ask_orderbook_price = ask_orderbook_price
+        self.market_order_price = market_order_price
+        self.buy_price_end_period = buy_price_end_period
+        self.sell_price_end_period = sell_price_end_period
 
         self.period: TPeriod = TPeriod(time_period=period)
         self.period_duration = 0
@@ -73,13 +84,27 @@ class TMockClient(local_api.Client):
 
             if order.status == OrderExecutionReportStatus.EXECUTION_REPORT_STATUS_NEW:
                 p = round(order.price, 9)
-                low = round(Decimal(self.current_candles[ticker]['low']), 9)
-                high = round(Decimal(self.current_candles[ticker]['high']), 9)
-                mid = (high + low) / 2
+                mid = (round(Decimal(self.current_candles[ticker]['high']), 9)
+                       + round(Decimal(self.current_candles[ticker]['low']), 9) ) / 2
+
+                if self.buy_price_end_period == 'mid':
+                    p_buy = mid
+                else:
+                    p_buy = round(Decimal(self.current_candles[ticker][self.buy_price_end_period]), 9)
+
+                if self.sell_price_end_period == 'mid':
+                    p_sell = mid
+                else:
+                    p_sell = round(Decimal(self.current_candles[ticker][self.sell_price_end_period]), 9)
+
+                if self.market_order_price == 'mid':
+                    p_market = mid
+                else:
+                    p_market = round(Decimal(self.current_candles[ticker][self.market_order_price]), 9)
 
                 if order.order_type == OrderType.ORDER_TYPE_LIMIT:
-                    if ((order.direction == OrderDirection.ORDER_DIRECTION_BUY and p >= low)
-                            or (order.direction == OrderDirection.ORDER_DIRECTION_SELL and p <= high)):
+                    if ((order.direction == OrderDirection.ORDER_DIRECTION_BUY and p >= p_buy)
+                            or (order.direction == OrderDirection.ORDER_DIRECTION_SELL and p <= p_sell)):
                         order.status = OrderExecutionReportStatus.EXECUTION_REPORT_STATUS_FILL
                         order.executed_order_price = p
                         order.lots_executed = order.quantity
@@ -90,12 +115,12 @@ class TMockClient(local_api.Client):
                                             * (-1 if order.direction == OrderDirection.ORDER_DIRECTION_BUY else 1))
                 elif order.order_type == OrderType.ORDER_TYPE_MARKET:
                     order.status = OrderExecutionReportStatus.EXECUTION_REPORT_STATUS_FILL
-                    order.executed_order_price = mid
+                    order.executed_order_price = p_market
                     order.lots_executed = order.quantity
                     order.executed_commission = Decimal(0)
-                    order.total_order_amount = order.quantity * mid * ticker.lot
+                    order.total_order_amount = order.quantity * p_market * ticker.lot
 
-                    self._cash += float(order.quantity * mid * ticker.lot
+                    self._cash += float(order.quantity * p_market * ticker.lot
                                         * (-1 if order.direction == OrderDirection.ORDER_DIRECTION_BUY else 1))
 
         for ticker, candles_df in self.candle_data.items():
@@ -271,13 +296,22 @@ class MockMarketData(MockService, local_api.MarketDataService):
     ) -> local_api.GetOrderBookResponse:
         ticker = self.client.uid_to_tickers[instrument_id]
 
-        mid_price = (self.client.current_candles[ticker]['low'] + self.client.current_candles[ticker]['high']) / 2
-        open_price = self.client.current_candles[ticker]['open']
+        mid = (self.client.current_candles[ticker]['low'] + self.client.current_candles[ticker]['high']) / 2
+
+        if self.client.bid_orderbook_price == 'mid':
+            p_bid = mid
+        else:
+            p_bid = self.client.current_candles[ticker][self.client.bid_orderbook_price]
+
+        if self.client.ask_orderbook_price == 'mid':
+            p_ask = mid
+        else:
+            p_ask = self.client.current_candles[ticker][self.client.ask_orderbook_price]
 
         return local_api.GetOrderBookResponse(
-            bids=[local_api.Order(price=open_price,
+            bids=[local_api.Order(price=p_bid,
                                   quantity=1000000)],
-            asks=[local_api.Order(price=open_price,
+            asks=[local_api.Order(price=p_ask,
                                   quantity=1000000)],
             depth=1,
             instrument_uid=''

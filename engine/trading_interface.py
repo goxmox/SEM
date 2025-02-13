@@ -30,8 +30,8 @@ class TradingInterface:
                 start = time()
 
                 for strategy in self._strategies:
-                    if (client.period.time_period.hour == 0) and (client.period.time_period.minute == 0):
-                   # if (client.period.time_period.minute == 0):
+                    #if (client.period.time_period.hour == 0) and (client.period.time_period.minute == 0):
+                    if (client.period.time_period.minute == 0):
                         print(round(100 * sum(strategy.profits) / (starting_cash * strategy._cash_share), 3))
 
                     if not strategy.active:

@@ -171,7 +171,7 @@ class HMMLearn(GaussianHMM, HMMReturnsMixin):
     def fit(self, X, lengths=None):
         n_tries = 0
 
-        while n_tries < 3:
+        while n_tries < 10:
             try:
                 super().fit(X, lengths=lengths)
                 n_tries = 3

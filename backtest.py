@@ -24,7 +24,7 @@ if __name__ == '__main__':
     tickers_collection = ['SBER']
 
     model = HMMLearn(
-        n_components=16,
+        n_components=10,
         covariance_type='full',
     )
 
@@ -38,7 +38,12 @@ if __name__ == '__main__':
     ]
 
     mock_client_config = {
-        'period': t
+        'period': t,
+        'bid_orderbook_price': 'open',
+        'ask_orderbook_price': 'open',
+        'market_order_price': 'open',
+        'buy_price_end_period': 'low',
+        'sell_price_end_period': 'high',
     }
 
     strategies = [
