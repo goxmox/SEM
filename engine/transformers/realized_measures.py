@@ -18,6 +18,3 @@ class RV(TransformerMixin, BaseEstimator):
         rv.rename(columns={'returns': 'RV'}, inplace=True)
 
         return rv
-
-    def __eq__(self, other: 'RV'):
-        return type(other) is RV

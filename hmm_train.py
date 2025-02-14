@@ -1,9 +1,9 @@
 from datetime import datetime, timezone
 
 from engine.models.hmm import HMMLearn
-from engine.schemas.data_broker import DataTransformerBroker
+from engine.schemas.data_broker import Pipeline
 from engine.transformers.returns import Returns
-from engine.transformers.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler
 from engine.transformers.candles_processing import RemoveZeroActivityCandles
 from api.tinvest.tticker import TTicker
 from api.broker_list import t_invest
@@ -16,6 +16,9 @@ import sys
 import os
 
 LocalCandlesUploader.broker = t_invest
+
+from sklearn import set_config
+set_config(transform_output="pandas")
 
 argv = True
 
@@ -43,7 +46,7 @@ model = HMMLearn(
     n_iter=1000,
 )
 
-pipe = DataTransformerBroker(tick).make_pipeline(
+pipe = Pipeline(tick).make_pipeline(
     [
         RemoveZeroActivityCandles(),
         Returns(keep_overnight=False, day_number=False, candle_to_price='two_way', keep_vol=False),
@@ -55,7 +58,7 @@ pipe = DataTransformerBroker(tick).make_pipeline(
 
 pipe.fit(tries=n_fits, show_score=True)
 
-X = pipe.final_datanode.data.to_numpy()
+X = pipe.final_datanodes.data.to_numpy()
 pipe.model.determine_states(X, pipe.fetch_data('Returns').sum(axis=1).to_numpy())
 
 bic = pipe.model.bic(X)

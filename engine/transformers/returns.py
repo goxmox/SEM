@@ -19,18 +19,18 @@ class Returns(TransformerMixin, BaseEstimator):
         self.day_number = day_number
         self.keep_vol = keep_vol
         self.last_candle: pd.DataFrame = None
-        self.name = 'Returns(' + f'candle_to_price={candle_to_price},keep_overnight={str(keep_overnight)},' \
-                    + f'keep_vol={str(keep_vol)}' + ')'
 
     def get_feature_names_out(self, input_features=None):
         return self.feature_names_out_
 
     def fit(self, X, y=None, **kwargs):
+        self.last_candle: pd.DataFrame = None
+
         return self
 
     def transform(self, X):
-        if type(X) is list:
-            if type(X[0]) is pd.DataFrame:
+        if isinstance(X, list):
+            if isinstance(X[0], pd.DataFrame):
                 X = pd.concat(X)
 
         if self.last_candle is not None:
@@ -73,14 +73,39 @@ class Returns(TransformerMixin, BaseEstimator):
         return returns
 
     def save_model(self):
-        data = {
-            'last_candle': self.last_candle
-        }
-
-        return data
+        return self
 
     def load_model(self, data):
         self.last_candle = data['last_candle']
 
-    def __eq__(self, other: 'Returns'):
-        return type(other) is Returns and self.candle_to_price == other.candle_to_price
+
+class CandlesToDirection(TransformerMixin, BaseEstimator):
+    def __init__(
+            self,
+            bull_threshold=8,
+            bear_threshold=-8,
+            periods=5
+    ):
+        self.bull_threshold = bull_threshold
+        self.bear_threshold = bear_threshold
+        self.periods = periods
+
+        self.last_candles = pd.DataFrame([])
+
+    def fit(self, X, y=None):
+        self.last_candles = pd.DataFrame([])
+
+        return self
+
+    def transform(self, X):
+        if isinstance(X, list):
+            if isinstance(X[0], pd.DataFrame):
+                X = pd.concat(X)
+
+        if len(self.last_candles) > 0:
+            X = pd.concat([self.last_candles, X])
+
+        t_index = X.index
+
+        directions_bull = np.log(X['high'].iloc[self.periods - 1:]) - np.log(X['open'].iloc[:X.shape[0] - self.periods + 1])
+        directions_bear = np.log(X['low'].iloc[self.periods - 1:]) - np.log(X['open'].iloc[:X.shape[0] - self.periods + 1])

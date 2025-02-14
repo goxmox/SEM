@@ -4,7 +4,7 @@ from engine.strategies.strategy import Strategy
 from engine.strategies.datatypes import LocalOrder
 from engine.schemas.enums import SessionPeriod, OrderType, OrderDirection, OrderExecutionReportStatus
 from engine.schemas.datatypes import Ticker
-from engine.schemas.data_broker import DataTransformerBroker
+from engine.schemas.data_broker import Pipeline
 from engine.transformers.returns import Returns
 from pomegranate.distributions import Normal
 from pomegranate.gmm import GeneralMixtureModel
@@ -200,7 +200,7 @@ class AvgState(Strategy):
 
         if not self._executed:
             self._ticker_pipelines = {
-                ticker: DataTransformerBroker(
+                ticker: Pipeline(
                     ticker=ticker
                 ).make_pipeline(self._pipeline, end_date=self._period.time_period).load_model(
                     load_data=self._states_from_train_data)
@@ -209,7 +209,7 @@ class AvgState(Strategy):
 
             for pipe in self._ticker_pipelines.values():
                 if self._states_from_train_data:
-                    X = pipe.final_datanode.data
+                    X = pipe.final_datanodes.data
                     returns = pipe.fetch_data('Returns').to_numpy()
 
                     pipe.model.determine_states(

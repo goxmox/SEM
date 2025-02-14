@@ -9,7 +9,7 @@ from api.tinvest.utils import to_quotation
 import api.tinvest.tclient as t_api
 from api.broker_list import t_invest
 import engine.schemas.client as local_api
-from engine.schemas.data_broker import DataTransformerBroker
+from engine.schemas.data_broker import Pipeline
 from engine.schemas.enums import OrderDirection, OrderExecutionReportStatus, SessionPeriod, OrderType
 from engine.candles.candles_uploader import LocalCandlesUploader
 import pandas as pd

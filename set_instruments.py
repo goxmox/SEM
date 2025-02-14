@@ -4,7 +4,7 @@ from api.tinvest.tclient import TClient
 from api.broker_list import t_invest
 from api.tinvest.tticker import TTicker
 from engine.candles.candles_uploader import LocalCandlesUploader
-from engine.schemas.data_broker import DataTransformerBroker
+from engine.schemas.data_broker import Pipeline
 from main import main
 
 if __name__ == '__main__':
