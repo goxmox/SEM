@@ -2,7 +2,7 @@ from engine.schemas.datatypes import Period, Broker, Ticker
 from engine.strategies.strategy import Strategy
 from engine.schemas.client import Client
 from engine.schemas.enums import AccountType
-from datetime import date, timedelta
+from datetime import datetime, timedelta, timezone
 from time import sleep, time
 from typing import Type
 
@@ -12,9 +12,11 @@ class TradingInterface:
             self,
             account: AccountType,
             strategies: list[Strategy],
+            duration: timedelta = None,
     ):
         self._strategies = strategies
         self._account = account
+        self._duration = duration
 
     def launch(
             self,
@@ -26,7 +28,13 @@ class TradingInterface:
             number_of_inactive_strategies = 0
             starting_cash = client._cash
 
-            while len(self._strategies) > number_of_inactive_strategies:
+            if self._duration is not None:
+                end_date = client.period.time_period + self._duration
+            else:
+                end_date = datetime.max.replace(tzinfo=timezone.utc)
+
+            while ((len(self._strategies) > number_of_inactive_strategies)
+                   and (client.period.time_period < end_date)):
                 start = time()
 
                 for strategy in self._strategies:
@@ -36,7 +44,7 @@ class TradingInterface:
 
                     if not strategy.active:
                         continue
-
+                    #print(client.period.time_period)
                     strategy.execute(client, self._account, tickers_collection)
 
                     if not strategy.active:

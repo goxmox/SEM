@@ -349,7 +349,7 @@ class RemoveSession(TransformerMixin, BaseEstimator):
         self._ticker = ticker
         self.remove_session = [session[s] for s in remove_session]
 
-    def fit(self, X):
+    def fit(self, X, y=None):
         return self
 
     def transform(self, X: pd.DataFrame):
@@ -377,6 +377,7 @@ class RemoveSession(TransformerMixin, BaseEstimator):
             )
 
         return pd.concat(candles_df)
+
 
 class RemoveZeroActivityCandles(TransformerMixin, BaseEstimator):
     def fit(self, X):

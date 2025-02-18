@@ -29,6 +29,7 @@ class TMockClient(local_api.Client):
             market_order_price: str = 'open',
             buy_price_end_period: str = 'low',
             sell_price_end_period: str = 'high',
+            lag_in_cached_candles: int = 1,
             cash: float = 100000
     ):
         super().__init__(t_invest)
@@ -38,6 +39,7 @@ class TMockClient(local_api.Client):
         self.market_order_price = market_order_price
         self.buy_price_end_period = buy_price_end_period
         self.sell_price_end_period = sell_price_end_period
+        self.lag_in_cached_candles = lag_in_cached_candles
 
         self.period: TPeriod = TPeriod(time_period=period)
         self.period_duration = 0
@@ -165,6 +167,9 @@ class MockClientServices(local_api.Services):
         self.orders: MockOrders = MockOrders(self)
         self.market_data: MockMarketData = MockMarketData(self)
         self.last_cached_candles_idx: dict[str, int] = client.last_candles_idx.copy()
+
+        for last_cached_candle_key in self.last_cached_candles_idx.keys():
+            self.last_cached_candles_idx[last_cached_candle_key] -= self.client.lag_in_cached_candles
 
     def get_instruments(self):
         pass

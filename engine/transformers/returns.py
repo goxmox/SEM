@@ -14,19 +14,16 @@ class Returns(TransformerMixin, BaseEstimator):
             keep_vol: bool = True,
     ):
         self.candle_to_price = candle_to_price
-        self.feature_names_out_ = ['returns', 'day_number', 'volume']
         self.keep_overnight = keep_overnight
         self.day_number = day_number
         self.keep_vol = keep_vol
         self.last_candle: pd.DataFrame = None
 
-    def get_feature_names_out(self, input_features=None):
-        return self.feature_names_out_
-
     def fit(self, X, y=None, **kwargs):
         self.last_candle: pd.DataFrame = None
 
         return self
+
 
     def transform(self, X):
         if isinstance(X, list):
@@ -97,7 +94,7 @@ class CandlesToDirection(TransformerMixin, BaseEstimator):
 
         return self
 
-    def transform(self, X):
+    def transform(self, X, save_state=False):
         if isinstance(X, list):
             if isinstance(X[0], pd.DataFrame):
                 X = pd.concat(X)
@@ -105,7 +102,26 @@ class CandlesToDirection(TransformerMixin, BaseEstimator):
         if len(self.last_candles) > 0:
             X = pd.concat([self.last_candles, X])
 
-        t_index = X.index
+        t_index = X.index[self.periods - 1:]
 
-        directions_bull = np.log(X['high'].iloc[self.periods - 1:]) - np.log(X['open'].iloc[:X.shape[0] - self.periods + 1])
-        directions_bear = np.log(X['low'].iloc[self.periods - 1:]) - np.log(X['open'].iloc[:X.shape[0] - self.periods + 1])
+        directions_bull = (
+                np.log(X['high'].rolling(window=self.periods).max().iloc[self.periods - 1:].reset_index(drop=True))
+                - np.log(X['open'].iloc[:X.shape[0] - self.periods + 1]).reset_index(drop=True)
+        ) * 10000
+        directions_bear = (
+                np.log(X['low'].rolling(window=self.periods).min().iloc[self.periods - 1:].reset_index(drop=True))
+                - np.log(X['open'].iloc[:X.shape[0] - self.periods + 1]).reset_index(drop=True)
+        ) * 10000
+
+        directions_bear.index = t_index
+        directions_bull.index = t_index
+
+        y = (directions_bull > self.bull_threshold) * (directions_bull > -directions_bear)
+        y += 2 * ((directions_bear < self.bear_threshold) * (directions_bear < -directions_bull))
+
+        y.name = f'direction_{self.periods}'
+
+        if self.periods > 1:
+            self.last_candles = X.iloc[-self.periods + 1:]
+
+        return y.to_frame()

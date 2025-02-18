@@ -149,7 +149,7 @@ class HMMPomegranate(DenseHMM):
         return self.forward_prob
 
 
-class HMMLearn(GaussianHMM, HMMReturnsMixin):
+class HMMLearnGaussian(GaussianHMM, HMMReturnsMixin):
     def __init__(
             self,
             n_components=2,
@@ -168,13 +168,15 @@ class HMMLearn(GaussianHMM, HMMReturnsMixin):
     def decode(self, X, lengths=None, algorithm=None):
         return super().decode(X, lengths=lengths, algorithm=algorithm)[1]
 
-    def fit(self, X, lengths=None):
+    def fit(self, X: pd.DataFrame, lengths=None):
         n_tries = 0
+
+        X = X.to_numpy()
 
         while n_tries < 10:
             try:
                 super().fit(X, lengths=lengths)
-                n_tries = 3
+                n_tries = 10
             except ValueError:
                 n_tries += 1
 

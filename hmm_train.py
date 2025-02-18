@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from engine.models.hmm import HMMLearn
+from engine.models.hmm import HMMLearnGaussian
 from engine.schemas.data_broker import Pipeline
 from engine.transformers.returns import Returns
 from sklearn.preprocessing import StandardScaler
@@ -38,7 +38,7 @@ tick = TTicker(tickers[0])
 t = datetime(year=2024, month=12, day=1).replace(tzinfo=timezone.utc)
 
 # model fitting
-model = HMMLearn(
+model = HMMLearnGaussian(
     n_components=n_components,
     covariance_type='full',
     verbose=True,

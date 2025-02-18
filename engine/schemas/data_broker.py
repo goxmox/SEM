@@ -12,23 +12,77 @@ class Pipeline:
     nodes: dict[Ticker, list['DataNode']] = {}
     optimized: dict[str, bool] = {}
 
+    def __new__(
+            cls,
+            *args,
+            path: str = None,
+            end_date: datetime = datetime.now(tz=timezone.utc),
+            load_data: bool = False,
+            **kwargs
+    ):
+        if path is not None:
+            pickled_models = []
+
+            for model in os.listdir(path):
+                pickled_models.append(path + model)
+
+            latest_model = None
+
+            for path_to_pickled_file in pickled_models:
+                fitted_date = path_to_pickled_file[path_to_pickled_file.rfind('/') + 1:path_to_pickled_file.rfind('.')]
+                fitted_date = datetime.strptime(
+                    fitted_date,
+                    '%Y-%m-%d_%H-%M-%S',
+                ).replace(tzinfo=timezone.utc)
+
+                if end_date >= fitted_date:
+                    latest_model = path_to_pickled_file
+                else:
+                    next_cached_model_date = fitted_date
+                    break
+            else:
+                next_cached_model_date = datetime.max.replace(tzinfo=timezone.utc)
+
+            pipe = joblib.load(latest_model)
+            pipe.next_cached_model_date = next_cached_model_date
+
+            if load_data:
+                data = pipe.compute(end_date=end_date)
+
+            if pipe.end_date > pipe.fit_date:
+                if load_data:
+                    new_data = data[data.index > pipe.fit_date]
+                else:
+                    new_data = pipe.compute(fit_date=pipe.fit_date, end_date=pipe.end_date)
+
+                if len(new_data) > 0:
+                    pipe.model.predict(new_data, save_state=True)
+
+            return pipe
+        else:
+            return super().__new__(cls)
+
     def __init__(self,
                  ticker: Ticker,
-                 remove_session: list[str] = None
+                 remove_session: list[str] = None,
+                 end_date: datetime = datetime.now(tz=timezone.utc),
+                 path: str = None,
+                 **kwargs,
                  ):
-        self.ticker = ticker
-        self.final_datanodes: list['DataNode'] = None
-        self.model = None
-        self.data_name = ''
-        self.end_date: datetime = None
-        self.fit_date: datetime = None
-        self.next_cached_model_date: datetime = None
-        self.remove_session = remove_session
+        if path is None:
+            self.ticker = ticker
+            self.final_datanodes: list['DataNode'] = None
+            self.model = None
+            self.data_name = ''
+            self.end_date: datetime = end_date
+            self.fit_date: datetime = None
+            self.next_cached_model_date: datetime = None
+            self.remove_session = remove_session
 
-        if self.ticker not in self.nodes.keys():
-            self.nodes[self.ticker] = []
+            if self.ticker not in self.nodes.keys():
+                self.nodes[self.ticker] = []
 
-        self.optimized[self.ticker] = False
+            self.optimized[self.ticker] = False
 
     def make_pipeline(
             self,
@@ -74,7 +128,7 @@ class Pipeline:
         for final_datanode in self.final_datanodes:
             new_data.append(final_datanode.compute(fit_date=fit_date, end_date=end_date))
 
-        return pd.concat(new_data, axis=1)
+        return pd.concat(new_data, axis=1, join='inner')
 
     def union(self, other_pipe: 'Pipeline'):
         self.final_datanodes.extend(other_pipe.final_datanodes)
@@ -102,8 +156,8 @@ class Pipeline:
         scores = []
 
         for i, model in enumerate(models):
-            model.fit(data.to_numpy(), **kwargs)
-            score = model.score(data.to_numpy(), **kwargs)
+            model.fit(data, **kwargs)
+            score = model.score(data, **kwargs)
 
             if show_score:
                 print(f'[{i}] Score: {score}')
@@ -123,61 +177,16 @@ class Pipeline:
 
         path += f'{self.fit_date.strftime("%Y-%m-%d_%H-%M-%S.pkl")}'
 
-        data_list = {'model': self.model.save_model()}
+        # if hasattr(self.model, 'save_model'):
+        #     data_list = {'model': self.model.save_model()}
+        # else:
+        #     data_list = {'model': self.model}
+        #
+        # for i, final_datanode in enumerate(self.final_datanodes):
+        #     data_list[i] = []
+        #     final_datanode.save_model(data_list[i])
 
-        for i, final_datanode in enumerate(self.final_datanodes):
-            data_list[i] = []
-            final_datanode.save_model(data_list[i])
-
-        joblib.dump(data_list, path)
-
-    def load_model(self, path, load_data=False):
-        pickled_models = []
-
-        for model in os.listdir(path):
-            pickled_models.append(path + model)
-
-        latest_model = None
-
-        for path_to_pickled_file in pickled_models:
-            fitted_date = path_to_pickled_file[path_to_pickled_file.rfind('/') + 1:path_to_pickled_file.rfind('.')]
-            fitted_date = datetime.strptime(
-                fitted_date,
-                '%Y-%m-%d_%H-%M-%S',
-            ).replace(tzinfo=timezone.utc)
-
-            if self.end_date >= fitted_date:
-                latest_model = path_to_pickled_file
-                self.fit_date = fitted_date
-            else:
-                self.next_cached_model_date = fitted_date
-                break
-        else:
-            self.next_cached_model_date = datetime.max.replace(tzinfo=timezone.utc)
-
-        data_list = joblib.load(latest_model)
-
-        if isinstance(data_list['model'], type(self.model)):
-            self.model = data_list['model']
-        else:
-            self.model.load_model(data_list['model'])
-
-        for i, final_datanode in self.final_datanodes:
-            final_datanode.load_model(data_list[i])
-
-        if load_data:
-            data = self.compute(end_date=self.end_date)
-
-        if self.end_date > self.fit_date:
-            if load_data:
-                new_data = data[data.index > self.fit_date]
-            else:
-                new_data = self.compute(fit_date=self.fit_date, end_date=self.end_date)
-
-            if len(new_data) > 0:
-                self.model.update(new_data)
-
-        return self
+        joblib.dump(self, path)
 
     def reload_model(self, path, cur_date: datetime):
         if cur_date >= self.next_cached_model_date:
@@ -187,18 +196,24 @@ class Pipeline:
         else:
             return False
 
-    def update(self, new_date: datetime):
-        new_data = []
+    def predict(self, new_date: datetime):
+        data = []
 
         for final_datanode in self.final_datanodes:
-            new_data.append(final_datanode.update(new_date))
+            new_data = final_datanode.update(new_date)
 
-        new_data = pd.concat(new_data, axis=1)
+            if len(new_data) > 0:
+                data.append(new_data)
 
-        if len(new_data) > 0:
-            self.model.update(new_data)
+        if len(data) > 0:
+            data = pd.concat(data, axis=1, join='inner')
 
         self.end_date = new_date
+
+        if len(data) > 0:
+            return self.model.predict(X=data)
+        else:
+            return
 
     def cache_new_data(self):
         for final_datanode in self.final_datanodes:
@@ -260,11 +275,6 @@ class DataNode:
 
         self.fitted = False
 
-        if self.transformer is not None:
-            self.name = self.transformer.name
-        else:
-            self.name = 'Candles'
-
     def compute(self, fit_date=None, end_date=None):
         if self.end_date is None:
             self.end_date = end_date
@@ -277,6 +287,7 @@ class DataNode:
                 self.data = pd.DataFrame()
             elif (self.data is None) and (not self.fitted):
                 self.data = self.transformer.fit_transform(self.parent.data)
+
                 self.fitted = True
             elif self.data is None:
                 self.data = self.transformer.transform(self.parent.data)
@@ -296,6 +307,8 @@ class DataNode:
                         remove_session=self.remove_session
                     ).fit_transform(self.data)
 
+        return self.data
+
     def update(self, new_date: datetime):
         self.end_date = new_date
 
@@ -307,8 +320,20 @@ class DataNode:
 
             if num_of_new_candle_batches > 0:
                 new_data = LocalCandlesUploader.new_candles[self.ticker][-num_of_new_candle_batches:]
+
+                if self.remove_session:
+                    new_data = RemoveSession(
+                        broker=LocalCandlesUploader.broker,
+                        ticker=self.ticker,
+                        remove_session=self.remove_session
+                    ).transform(new_data)
+
+                self.new_data.append(new_data)
             else:
-                new_data = []
+                if len(self.new_data) == 0:
+                    new_data = []
+                else:
+                    new_data = self.new_data[-1]
         else:
             new_parent_data = self.parent.update(new_date)
 
@@ -316,6 +341,7 @@ class DataNode:
                 return []
 
             new_data = self.transformer.transform(new_parent_data)
+
             self.new_data.append(new_data)
 
         return new_data
@@ -327,7 +353,11 @@ class DataNode:
 
     def save_model(self, data_list):
         if self.parent is not None:
-            data_list.append({'transformer': self.transformer.save_model(), 'fitted': self.fitted})
+            if hasattr(self.transformer, 'save_model'):
+                data_list.append({'transformer': self.transformer.save_model(), 'fitted': self.fitted})
+            else:
+                data_list.append({'transformer': self.transformer, 'fitted': self.fitted})
+
             self.parent.save_model(data_list)
 
     def load_model(self, data_list):
