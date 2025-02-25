@@ -6,9 +6,6 @@ from engine.schemas.enums import SessionPeriod, OrderType, OrderDirection, Order
 from engine.schemas.datatypes import Ticker
 from engine.schemas.data_broker import Pipeline
 from engine.transformers.returns import Returns
-from pomegranate.distributions import Normal
-from pomegranate.gmm import GeneralMixtureModel
-from pomegranate.hmm import DenseHMM
 import numpy as np
 
 

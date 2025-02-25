@@ -10,7 +10,7 @@ from engine.strategies.state_based import AvgState
 from engine.schemas.data_broker import Pipeline
 
 from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from engine.transformers.candles_processing import RemoveZeroActivityCandles
 from engine.transformers.returns import Returns, CandlesToDirection
 from engine.models.target_processor import TargetProcessorClassifier
@@ -36,46 +36,53 @@ if __name__ == '__main__':
 
         estimator = LogisticRegression(
             tol=0.001,
-            C=1,
+            C=0.5,
             verbose=1
         )
+
+        columns = ['returns'] + [f'onehot_direction_{waiting_period}_{i}' for i in range(3)]
+        max_lag = {column: lags + waiting_period for column in columns}
+        min_lag = {column: waiting_period for column in columns}
 
         model = TargetProcessorClassifier(
             target_name=f'direction_{waiting_period}',
             estimator=estimator,
-            max_lag_columns={'returns': lags + waiting_period},
-            min_lag_columns={'returns': waiting_period},
+            max_lag_columns=max_lag,
+            min_lag_columns=min_lag,
             remainder='drop',
             classes_name={0: 'calm', 1: 'bull', 2: 'bear'}
         )
 
-        pipe2 = Pipeline(TTicker("SBER")).make_pipeline(
+        pipe2 = Pipeline(TTicker("SBER"), end_date=train_date).add_nodes(
             [RemoveZeroActivityCandles(),
              CandlesToDirection(periods=waiting_period)
-             ],
-            end_date=train_date
+             ]
         )
 
-        pipe1 = Pipeline(TTicker("SBER")).make_pipeline(
+        pipe_onehot = Pipeline(TTicker("SBER"), end_date=train_date).add_nodes(
+            [RemoveZeroActivityCandles(),
+             CandlesToDirection(periods=waiting_period),
+             OneHotEncoder(sparse_output=False),
+             ],
+            add_prefix='onehot_'
+        )
+
+        pipe1 = Pipeline(TTicker("SBER"), end_date=train_date).add_nodes(
             [RemoveZeroActivityCandles(),
              Returns(keep_overnight=False, day_number=False, candle_to_price='close', keep_vol=False),
              StandardScaler(with_mean=False),
              model
-             ],
-            end_date=train_date
+             ]
         )
 
         pipe1.union(pipe2)
+        pipe1.union(pipe_onehot)
+
+        print(pipe1._compute_X())
 
         fitted_model = pipe1.fit()
 
         fitted_model.save_model(path_to_model)
-
-        print(fitted_model.model.score(fitted_model.compute(end_date=train_date)))
-        print(fitted_model.model.score(fitted_model.compute(
-            fit_date=train_date,
-            end_date=train_date + timedelta(hours=24)
-        )))
 
     if backtest_model:
         duration = timedelta(hours=24)

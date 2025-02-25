@@ -16,6 +16,10 @@ class LocalCandlesUploader:
     last_candles: dict[Ticker, pd.DataFrame] = {}
 
     @staticmethod
+    def set_broker(broker: Broker):
+        LocalCandlesUploader.broker = broker
+
+    @staticmethod
     def upload_candles(ticker: Ticker):
         if ticker in LocalCandlesUploader.candles_in_memory.keys():
             return LocalCandlesUploader.candles_in_memory[ticker]

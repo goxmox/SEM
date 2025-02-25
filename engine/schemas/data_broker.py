@@ -47,13 +47,13 @@ class Pipeline:
             pipe.next_cached_model_date = next_cached_model_date
 
             if load_data:
-                data = pipe.compute(end_date=end_date)
+                data = pipe._compute_X(end_date=end_date)
 
             if pipe.end_date > pipe.fit_date:
                 if load_data:
                     new_data = data[data.index > pipe.fit_date]
                 else:
-                    new_data = pipe.compute(fit_date=pipe.fit_date, end_date=pipe.end_date)
+                    new_data = pipe._compute_X(fit_date=pipe.fit_date, end_date=pipe.end_date)
 
                 if len(new_data) > 0:
                     pipe.model.predict(new_data, save_state=True)
@@ -84,14 +84,16 @@ class Pipeline:
 
             self.optimized[self.ticker] = False
 
-    def make_pipeline(
+    def add_nodes(
             self,
             steps: list,
-            end_date: datetime = datetime.now(tz=timezone.utc)
+            add_prefix: str = None,
     ):
-        parent_node = DataNode(ticker=self.ticker, remove_session=self.remove_session)
-        self.nodes[self.ticker].append(parent_node)
-        self.end_date = end_date.replace(tzinfo=timezone.utc)
+        if self.final_datanodes is None:
+            parent_nodes = [DataNode(ticker=self.ticker, remove_session=self.remove_session)]
+            self.nodes[self.ticker].extend(parent_nodes)
+        else:
+            parent_nodes = self.final_datanodes
 
         for idx, step in enumerate(steps):
             if (idx == len(steps) - 1) and (not hasattr(step, 'transform')):
@@ -100,33 +102,39 @@ class Pipeline:
                 new_node = DataNode(
                     ticker=self.ticker,
                     transformer=step,
-                    parent=parent_node
+                    parents=parent_nodes
                 )
 
-                parent_node.children.append(new_node)
-                parent_node = new_node
+                for parent_node in parent_nodes:
+                    parent_node.children.append(new_node)
+
+                parent_nodes = [new_node]
 
                 if self.data_name == '':
                     self.data_name += repr(step)
                 else:
                     self.data_name += '__' + repr(step)
 
-        self.final_datanodes = [parent_node]
-        parent_node.data_broker.append(self)
+        self.final_datanodes = parent_nodes
+
+        for final_node in self.final_datanodes:
+            final_node.data_broker.append(self)
+            final_node.prefix = add_prefix
+
         self.optimized[self.ticker] = False
 
         return self
 
-    def compute(self, fit_date: datetime = None, end_date: datetime = None):
+    def _compute_X(self, X: pd.DataFrame, fit_date: datetime = None, end_date: datetime = None):
         if end_date is None:
             end_date = self.end_date
 
-        self._optimize()
+        #self._optimize()
 
         new_data = []
 
         for final_datanode in self.final_datanodes:
-            new_data.append(final_datanode.compute(fit_date=fit_date, end_date=end_date))
+            new_data.append(final_datanode.fit(X, fit_date=fit_date, end_date=end_date))
 
         return pd.concat(new_data, axis=1, join='inner')
 
@@ -135,18 +143,8 @@ class Pipeline:
 
         return self
 
-    def fetch_data(self, node_subname):
-        for node in self.final_datanodes:
-            while node is not None:
-                if node_subname in node.name:
-                    return node.data
-
-                node = node.parent
-
-        return
-
-    def fit(self, tries=1, show_score=False, **kwargs):
-        data = self.compute()
+    def fit(self, X: pd.DataFrame, y=None, tries=1, show_score=False, **kwargs):
+        data = self._compute_X(X)
         self.fit_date = data.index[-1]
 
         models = [self.model]
@@ -156,7 +154,7 @@ class Pipeline:
         scores = []
 
         for i, model in enumerate(models):
-            model.fit(data, **kwargs)
+            model.fit(data, y=y, **kwargs)
             score = model.score(data, **kwargs)
 
             if show_score:
@@ -167,6 +165,25 @@ class Pipeline:
         self.model = models[scores.index(max(scores))]
 
         return self
+
+    def predict(self, X: pd.DataFrame, new_date: datetime):
+        data = []
+
+        for final_datanode in self.final_datanodes:
+            new_data = final_datanode.update(X, new_date)
+
+            if len(new_data) > 0:
+                data.append(new_data)
+
+        if len(data) > 0:
+            data = pd.concat(data, axis=1, join='inner')
+
+        self.end_date = new_date
+
+        if len(data) > 0:
+            return self.model.predict(X=data)
+        else:
+            return
 
     def save_model(self, path):
         if self.model is None:
@@ -186,6 +203,9 @@ class Pipeline:
         #     data_list[i] = []
         #     final_datanode.save_model(data_list[i])
 
+        for final_datanode in self.final_datanodes:
+            final_datanode.drop_data()
+
         joblib.dump(self, path)
 
     def reload_model(self, path, cur_date: datetime):
@@ -195,25 +215,6 @@ class Pipeline:
             return True
         else:
             return False
-
-    def predict(self, new_date: datetime):
-        data = []
-
-        for final_datanode in self.final_datanodes:
-            new_data = final_datanode.update(new_date)
-
-            if len(new_data) > 0:
-                data.append(new_data)
-
-        if len(data) > 0:
-            data = pd.concat(data, axis=1, join='inner')
-
-        self.end_date = new_date
-
-        if len(data) > 0:
-            return self.model.predict(X=data)
-        else:
-            return
 
     def cache_new_data(self):
         for final_datanode in self.final_datanodes:
@@ -236,7 +237,7 @@ class Pipeline:
                             node.data = same_node.data
 
                         for child in same_node.children:
-                            child.parent = node
+                            child.parents = node
                             node.children.append(child)
 
                         for data_broker in same_node.data_broker:
@@ -259,12 +260,12 @@ class DataNode:
             self,
             ticker: Ticker,
             transformer=None,
-            parent: 'DataNode' = None,
+            parents: list['DataNode'] = None,
             remove_session: list[str] = None
     ):
         self.ticker = ticker
         self.transformer = transformer
-        self.parent = parent
+        self.parents = parents
         self.end_date = None
         self.children = []
         self.data = None
@@ -273,27 +274,40 @@ class DataNode:
         self.data_broker = []
         self.remove_session = remove_session
 
+        self.prefix = None
+
         self.fitted = False
 
-    def compute(self, fit_date=None, end_date=None):
+    def fit(self, X: pd.DataFrame, fit_date=None, end_date=None):
         if self.end_date is None:
             self.end_date = end_date
 
-        if self.parent is not None:
-            if self.parent.data is None:
-                self.parent.compute(fit_date=fit_date, end_date=end_date)
+        if self.parents is not None:
+            data = []
 
-            if len(self.parent.data) == 0:
-                self.data = pd.DataFrame()
-            elif (self.data is None) and (not self.fitted):
-                self.data = self.transformer.fit_transform(self.parent.data)
+            for parent in self.parents:
+                if parent.data is None:
+                    parent_data = parent.fit(X, fit_date=fit_date, end_date=end_date)
+                else:
+                    parent_data = parent.data
 
-                self.fitted = True
-            elif self.data is None:
-                self.data = self.transformer.transform(self.parent.data)
+                if len(parent_data) == 0:
+                    data.append(pd.DataFrame())
+                elif (self.data is None) and (not self.fitted):
+                    data.append(self.transformer.fit_transform(parent_data))
+
+                    self.fitted = True
+                elif self.data is None:
+                    data.append(self.transformer.transform(parent.data))
+
+            if self.data is None:
+                self.data = pd.concat(data, axis=1, join='inner')
+
+                if self.prefix is not None:
+                    self.data = self.data.add_prefix(self.prefix)
         else:
             if self.data is None:
-                self.data = LocalCandlesUploader.upload_candles(self.ticker)
+                self.data = X
 
                 if fit_date is None:
                     self.data = self.data[self.data.index <= end_date]
@@ -309,10 +323,10 @@ class DataNode:
 
         return self.data
 
-    def update(self, new_date: datetime):
+    def update(self, X: pd.DataFrame, new_date: datetime):
         self.end_date = new_date
 
-        if self.parent is None:
+        if self.parents is None:
             num_of_new_candle_batches = len(LocalCandlesUploader.new_candles[self.ticker])\
                                         - self.n_of_new_data_processed
 
@@ -320,6 +334,7 @@ class DataNode:
 
             if num_of_new_candle_batches > 0:
                 new_data = LocalCandlesUploader.new_candles[self.ticker][-num_of_new_candle_batches:]
+                new_data = pd.concat(new_data)
 
                 if self.remove_session:
                     new_data = RemoveSession(
@@ -335,12 +350,21 @@ class DataNode:
                 else:
                     new_data = self.new_data[-1]
         else:
-            new_parent_data = self.parent.update(new_date)
+            data = []
 
-            if len(new_parent_data) == 0:
-                return []
+            for parent in self.parents:
+                updated_data = parent.update(new_date)
 
+                if len(updated_data) == 0:
+                    return []
+
+                data.append(updated_data)
+
+            new_parent_data = pd.concat(data, axis=1, join='inner')
             new_data = self.transformer.transform(new_parent_data)
+
+            if self.prefix is not None:
+                new_data = new_data.add_prefix(self.prefix)
 
             self.new_data.append(new_data)
 
@@ -351,36 +375,17 @@ class DataNode:
         self.n_of_new_data_processed = 0
         self.new_data = []
 
-    def save_model(self, data_list):
-        if self.parent is not None:
-            if hasattr(self.transformer, 'save_model'):
-                data_list.append({'transformer': self.transformer.save_model(), 'fitted': self.fitted})
-            else:
-                data_list.append({'transformer': self.transformer, 'fitted': self.fitted})
+    def drop_data(self):
+        self.data = None
+        self.new_data = []
 
-            self.parent.save_model(data_list)
-
-    def load_model(self, data_list):
-        if self.parent is not None:
-            if isinstance(data_list[0], dict) and ('fitted' in data_list[0].keys()):
-                transformer = data_list[0]['transformer']
-                fitted = data_list[0]['fitted']
-            else:
-                transformer = data_list[0]
-                fitted = True
-
-            if isinstance(transformer, type(self.transformer)):
-                self.transformer = transformer
-            else:
-                self.transformer.load_model(transformer)
-
-            self.fitted = fitted
-
-            self.parent.load_model(data_list[1:])
+        if self.parents is not None:
+            for parent in self.parents:
+                parent.drop_data()
 
     def __eq__(self, other: 'DataNode'):
         return ((repr(self.transformer) == repr(other.transformer))
-                and (self.parent == other.parent)
+                and (self.parents == other.parents)
                 and (self.ticker == other.ticker)
                 and (self.end_date == other.end_date)
                 )

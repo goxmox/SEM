@@ -46,7 +46,7 @@ model = HMMLearnGaussian(
     n_iter=1000,
 )
 
-pipe = Pipeline(tick).make_pipeline(
+pipe = Pipeline(tick).add_nodes(
     [
         RemoveZeroActivityCandles(),
         Returns(keep_overnight=False, day_number=False, candle_to_price='two_way', keep_vol=False),
