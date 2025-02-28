@@ -1,4 +1,4 @@
-from engine.candles.candles_uploader import LocalCandlesUploader
+from engine.candles.candles_uploader import LocalTSUploader
 from api.broker_list import t_invest
 from api.tinvest.mock_client import TMockClient
 from api.tinvest.tclient import TClient
@@ -18,7 +18,7 @@ def start_up(
         from api.tinvest.set_token import set_token
         set_token()
 
-    LocalCandlesUploader.broker = t_invest
+    LocalTSUploader.broker = t_invest
 
     if set_up_instruments:
         with TClient(**client_config) as client:

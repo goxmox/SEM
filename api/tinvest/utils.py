@@ -1,5 +1,5 @@
 from tinkoff.invest import Quotation
-from engine.schemas.constants import instrument_path
+from engine.schemas.constants import data_path
 from engine.schemas.datatypes import Broker
 from api.tinvest.datatypes import InstrumentType
 import pandas as pd
@@ -42,8 +42,8 @@ def quotation_to_float(number) -> float:
 
 
 def get_info_of_instruments(type_instrument: InstrumentType, broker: Broker) -> pd.DataFrame:
-    if os.path.isfile(instrument_path + f'{broker.broker_name}/{type_instrument.name}.csv'):
-        return pd.read_csv(instrument_path + f'{broker.broker_name}/{type_instrument.name}.csv')
+    if os.path.isfile(data_path + f'{broker.broker_name}/{type_instrument.name}.csv'):
+        return pd.read_csv(data_path + f'{broker.broker_name}/{type_instrument.name}.csv')
     else:
         raise ValueError(f'{type_instrument.name} is not a supported type of instrument.')
 

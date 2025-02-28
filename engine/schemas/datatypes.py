@@ -1,10 +1,7 @@
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta, timezone, date
 from dataclasses import dataclass
-import os
-import pandas as pd
-from engine.schemas.enums import InstrumentType
-from engine.schemas.constants import candle_path
+from engine.schemas.enums import InstrumentType, SessionPeriod
 from decimal import Decimal
 
 
@@ -21,24 +18,36 @@ class Broker:
 
 
 class Period(ABC):
-    def __init__(self):
+    def __init__(self, *args, **kwargs):
         self.time_period: datetime = datetime.now()
         self.time_frequency: timedelta = timedelta(minutes=1)
         self.exchange_closed: bool = False
         self.on_break: bool = False
+        self.instrument_session: dict[InstrumentType, SessionPeriod] = None
 
     @abstractmethod
-    def next_period(self, update_with_cur_time):
+    def update_market_schedule_info(self):
         pass
+
+    def next_period(self, update_with_cur_time: bool):
+        if not update_with_cur_time:
+            self.time_period += self.time_frequency
+        else:
+            self.time_period = datetime.now(tz=timezone.utc)
+
+        self.update_market_schedule_info()
 
 
 @dataclass
 class Ticker(ABC):
+    """Dataclass containing all necessary ticker information."""
+
     uid: str = None
     ticker_sign: str = None
     min_price_increment: float = None
     lot: int = None
     type_instrument = None
+    candles_start_date: datetime = None
 
     def __eq__(self, other):
         return (self.uid == other.uid) and (self.ticker_sign == self.ticker_sign)

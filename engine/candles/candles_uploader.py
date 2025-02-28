@@ -1,104 +1,77 @@
 import pandas as pd
-from engine.schemas.constants import candle_path, instrument_path
-from engine.schemas.datatypes import Ticker, Broker
 import os
-import json
-from datetime import timedelta, datetime
+from typing import Union
 
 
-class LocalCandlesUploader:
-    candles_in_memory: dict[Ticker, pd.DataFrame] = {}
+class LocalTSUploader:
+    def __init__(self, path: str):
+        self.new_observations: list[pd.DataFrame] = []
+        self.path = path
 
-    broker: Broker
+    def upload_ts(self, ts: pd.DataFrame):
+        """
+        Uploads time-series ts.
 
-    new_candles: dict[Ticker, list[pd.DataFrame]] = {}
-    candles_start_dates: dict[Ticker, datetime] = {}
-    last_candles: dict[Ticker, pd.DataFrame] = {}
+        Uploads ts dataframe at the self.path. Time-series ts must have a 'time' column.
+        """
 
-    @staticmethod
-    def set_broker(broker: Broker):
-        LocalCandlesUploader.broker = broker
+        if not 'time' in ts.columns:
+            raise ValueError('Time-series must have \'time\' column.')
 
-    @staticmethod
-    def upload_candles(ticker: Ticker):
-        if ticker in LocalCandlesUploader.candles_in_memory.keys():
-            return LocalCandlesUploader.candles_in_memory[ticker]
-        else:
-            candles_df = pd.read_csv(
-                candle_path + f'{LocalCandlesUploader.broker.broker_name}/{ticker.ticker_sign}/{ticker.ticker_sign}.csv'
-            )
+        ts.to_csv(self.path)
 
-            candles_df['time'] = pd.to_datetime(candles_df['time'], format='%Y-%m-%d %H:%M:%S%z')
-            candles_df = candles_df.set_index('time')
+    def download_ts(self):
+        """
+        Download cached time-series.
 
-            LocalCandlesUploader.candles_in_memory[ticker] = candles_df
+        Returns the dataframe of a time-series saved at the self.path. The time-series
+        must be a .csv and must have a 'time' column. Index of a returned df is a 'time' column.
+        """
+        df = pd.read_csv(
+            self.path
+        )
 
-            last_candle = candles_df.iloc[-1:].copy()
+        df['time'] = pd.to_datetime(df['time'], format='%Y-%m-%d %H:%M:%S%z')
+        df = df.set_index('time')
 
-            LocalCandlesUploader.last_candles[ticker] = last_candle
-            LocalCandlesUploader.candles_start_dates[ticker] = last_candle.index[0] \
-                                                                           + timedelta(minutes=1)
+        return df
 
-            return candles_df
+    def save_new_observations(self, new_observation: pd.DataFrame):
+        """
+        Caches new observations.
 
-    @staticmethod
-    def get_last_candle(ticker: Ticker):
-        if ticker in LocalCandlesUploader.last_candles.keys():
-            return LocalCandlesUploader.last_candles[ticker]
+        Appends new observations of dataframe type at self.new_observbations.
+        """
+        self.new_observations.append(new_observation)
+
+    def get_last_observation(self) -> Union[pd.DataFrame, None]:
+        """
+        Returns last observation.
+
+        Returns last observation if it exists. Otherwise, returns None
+        """
+        if len(self.new_observations[-1]):
+            return self.new_observations[-1]
         else:
             return None
 
-    @staticmethod
-    def get_new_candle_datetime(ticker: Ticker):
-        if ticker in LocalCandlesUploader.candles_start_dates.keys():
-            return LocalCandlesUploader.candles_start_dates[ticker]
-        else:
-            instruments_first_candles = pd.read_csv(
-                instrument_path + f'{LocalCandlesUploader.broker.broker_name}/{ticker.type_instrument.name}.csv'
-            )[['uid', 'first_1min_candle_date']].set_index('uid')
+    def upload_new_observations(self):
+        """
+        Uploads new observations.
 
-            start_date = datetime.strptime(
-                instruments_first_candles.loc[ticker.uid, 'first_1min_candle_date'],
-                '%Y-%m-%d %H:%M:%S%z'
+        Appends new observations at the end of the .csv file at self.path.
+        """
+        if len(self.new_observations) > 0:
+            if not os.path.isdir(self.path):
+                os.makedirs(self.path)
+
+            pd.concat(self.new_observations).to_csv(
+                self.path,
+                mode='a',
+                header=not os.path.isfile(
+                    self.path
+                )
             )
 
-        return start_date
-
-    @staticmethod
-    def save_new_candles(new_candles: pd.DataFrame, ticker: Ticker):
-        if ticker in LocalCandlesUploader.new_candles.keys():
-            LocalCandlesUploader.new_candles[ticker].append(new_candles)
-        else:
-            LocalCandlesUploader.new_candles[ticker] = [new_candles]
-
-    @staticmethod
-    def cache_new_candles():
-        for ticker in LocalCandlesUploader.new_candles.keys():
-            ticker_path = candle_path + f"{LocalCandlesUploader.broker.broker_name}/{ticker.ticker_sign}/"
-
-            new_candles = LocalCandlesUploader.new_candles[ticker]
-
-            if len(new_candles) > 0:
-                if not os.path.isdir(ticker_path):
-                    os.makedirs(ticker_path)
-
-                pd.concat(new_candles).to_csv(
-                    ticker_path + f'{ticker.ticker_sign}.csv',
-                    mode='a',
-                    header=not os.path.isfile(
-                        ticker_path + f'{ticker.ticker_sign}.csv'
-                    )
-                )
-
-            if ticker in LocalCandlesUploader.candles_in_memory.keys():
-                LocalCandlesUploader.candles_in_memory[ticker] = pd.concat(
-                    [LocalCandlesUploader.candles_in_memory[ticker]]
-                    + LocalCandlesUploader.new_candles[ticker]
-                )
-            else:
-                LocalCandlesUploader.candles_in_memory[ticker] = pd.concat(
-                    LocalCandlesUploader.new_candles[ticker]
-                )
-
-        LocalCandlesUploader.new_candles = {}
+        self.new_observations = []
 

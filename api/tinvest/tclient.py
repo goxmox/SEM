@@ -9,7 +9,7 @@ from tinkoff.invest.constants import INVEST_GRPC_API, INVEST_GRPC_API_SANDBOX
 from tinkoff.invest import CandleInterval, RequestError
 from api.tinvest.tperiod import TPeriod
 from api.tinvest.tticker import TTicker
-from api.tinvest.datatypes import SessionAuction, AccountType, InstrumentType
+from api.tinvest.datatypes import SessionAuction, AccountType, InstrumentType, CandleInterval
 from api.tinvest.utils import quotation_to_float, quotation_to_decimal, to_quotation
 from api.broker_list import t_invest
 from typing_extensions import Self
@@ -18,6 +18,7 @@ from dataclasses import asdict
 from datetime import datetime, timedelta
 from time import sleep
 import os
+import numpy as np
 
 
 class TClient(t_api.Client, local_api.Client):
@@ -254,6 +255,11 @@ class TGetOrderBookResponse(t_api.GetOrderBookResponse, local_api.GetOrderBookRe
 class TMarketDataService(t_services.MarketDataService, local_api.MarketDataService):
     def __init__(self, market_data):
         copy_attributes(self, market_data)
+
+    def get_frequency(self, frequency: int):
+        frequency_value = [1, 5, 15, 60, 60*60, 2, 3, 10, 30, 2*60, 4*60, 60*60*7, 60*60*7*4].index(frequency)
+
+        return CandleInterval(frequency_value + 1)
 
     def get_order_book(
             self, *args, **kwargs

@@ -1,13 +1,14 @@
 from abc import ABC, abstractmethod
 from typing_extensions import Self
-from typing import Callable, Optional
+from typing import Optional
 from decimal import Decimal
 from engine.schemas.enums import OrderExecutionReportStatus, OrderDirection, OrderType
 from engine.schemas.datatypes import Period, Ticker, Broker
+from engine.schemas.constants import data_path
 from engine.transformers.candles_processing import CandlesRefinerTransformer
-from engine.candles.candles_uploader import LocalCandlesUploader
+from engine.candles.candles_uploader import LocalTSUploader
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 import pandas as pd
 
 
@@ -15,10 +16,8 @@ class Client(ABC):
     broker: 'Broker'
 
     def __init__(self, *args, **kwargs):
-
         self.services: 'Services' = None
         self.period: Period = None
-        self.TickerWrapper: Callable[[str], Ticker] = None
         self.period_duration: int = 0
 
     @abstractmethod
@@ -69,6 +68,7 @@ class Services(ABC):
     sandbox: 'SandboxService'
 
     broker: 'Broker'
+    local_candles_uploaders: dict[LocalTSUploader]
 
     @abstractmethod
     def get_instruments(self):
@@ -86,39 +86,37 @@ class Services(ABC):
     def get_candles(
             self,
             ticker: 'Ticker',
+            frequency: Optional[int] = 1,
             start_date: Optional[datetime] = None
     ) -> bool:
-        last_cached_candle = LocalCandlesUploader.get_last_candle(ticker)
+        freq_name = f'candles_{frequency}min'
 
-        if last_cached_candle is not None:
-            last_cached_candle = last_cached_candle.copy()
-
-            last_day_number = last_cached_candle.iloc[0]['day_number']
-
-            del last_cached_candle['day_number']
-            last_cached_candle = last_cached_candle.reset_index()
+        if freq_name in self.local_candles_uploaders.keys():
+            candles_uploader = self.local_candles_uploaders[freq_name]
         else:
-            last_day_number = 0
+            self.local_candles_uploaders[freq_name] = LocalTSUploader(data_path + f'{self.broker}/{ticker.ticker_sign}/{freq_name}.csv')
+
+        frequency = self.market_data.get_frequency(frequency)
 
         if start_date is None:
-            start_date = LocalCandlesUploader.get_new_candle_datetime(ticker)
+            start_date = ticker.candles_start_date
 
-        candles_request_date = datetime.now().astimezone()
+        candles_request_date = datetime.now().astimezone(tz=timezone.utc)
 
         # aborting calls to fetching methods if there are no new candles yet
         if (candles_request_date - start_date).seconds < 60:
-            return pd.DataFrame([])
+            return False
 
         new_candles = self._candles_writer(
             ticker.uid,
             from_=start_date
         )
 
-        if last_cached_candle is not None:
+        if self.market_data.last_cached_candle is not None:
             if len(new_candles) > 0:
-                new_candles = pd.concat([last_cached_candle, new_candles])
+                new_candles = pd.concat([self.market_data.last_cached_candle, new_candles])
             else:
-                new_candles = last_cached_candle
+                new_candles = self.market_data.last_cached_candle
         elif new_candles.shape[0] == 0:
             # no data whatsoever on this ticker
             return False
@@ -126,15 +124,14 @@ class Services(ABC):
         new_candles = CandlesRefinerTransformer(
             broker=self.broker,
             ticker=ticker,
-            candles_request_date=candles_request_date,
-            last_day_number=last_day_number
+            candles_request_date=candles_request_date
         ).fit_transform(new_candles)
 
-        if last_cached_candle is not None:
+        if self.market_data.last_cached_candle is not None:
             new_candles = new_candles.iloc[1:]
 
         if new_candles.shape[0] != 0:
-            LocalCandlesUploader.save_new_candles(new_candles, ticker)
+            candles_uploader.save_new_observations(new_candles)
 
             return True
         else:
@@ -171,8 +168,15 @@ class InstrumentsService(ABC):
 
 
 class MarketDataService(ABC):
+    def __init__(self):
+        self.last_cached_candle: pd.DataFrame = None
+
     @abstractmethod
     def get_candles(self, *args, **kwargs):
+        pass
+
+    @abstractmethod
+    def get_frequency(self, frequency: int):
         pass
 
     @abstractmethod

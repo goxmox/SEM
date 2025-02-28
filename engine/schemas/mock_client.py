@@ -8,8 +8,8 @@ from api.tinvest.datatypes import SessionAuction
 from api.tinvest.utils import to_quotation
 import api.tinvest.tclient as t_api
 from api.broker_list import t_invest
-import engine.schemas.client as local_api
-from engine.schemas.mock_client import MockClient
+from engine.schemas.client import Client
+from engine.schemas.datatypes import Ticker, Period
 from engine.schemas.pipeline import Pipeline
 from engine.schemas.enums import OrderDirection, OrderExecutionReportStatus, SessionPeriod, OrderType
 from engine.candles.candles_uploader import LocalTSUploader
@@ -19,27 +19,146 @@ from dataclasses import dataclass
 from typing import Optional
 from datetime import datetime, timedelta
 
+from abc import ABC, abstractmethod
 
-class TMockClient(MockClient):
+
+
+class MockClient(Client, ABC):
+    def __init__(
+            self,
+            period: datetime,
+            tickers: list[Ticker],
+            bid_orderbook_price: str = 'low',
+            ask_orderbook_price: str = 'high',
+            market_order_price: str = 'open',
+            buy_price_end_period: str = 'low',
+            sell_price_end_period: str = 'high',
+            lag_in_cached_candles: int = 1,
+            cash: float = 100000
+    ):
+        super().__init__()
+
+        self.bid_orderbook_price = bid_orderbook_price
+        self.ask_orderbook_price = ask_orderbook_price
+        self.market_order_price = market_order_price
+        self.buy_price_end_period = buy_price_end_period
+        self.sell_price_end_period = sell_price_end_period
+        self.lag_in_cached_candles = lag_in_cached_candles
+
+        self.period: Period = Period(time_period=period)
+        self.period_duration = 0
+        self.services: MockClientServices = None
+        self._cash = cash
+
+        self.uid_to_tickers = {ticker.uid: ticker for ticker in tickers}
+
+        self.candle_data: dict = {
+            ticker:
+                LocalTSUploader.download_ts(ticker=ticker) for ticker in tickers
+        }
+        self.current_candles = {ticker: {} for ticker in self.candle_data.keys()}
+        self.last_candles_idx = {ticker: 0 for ticker in self.candle_data.keys()}
+
+        for ticker, candles_df in self.candle_data.items():
+            self.last_candles_idx[ticker] = (candles_df.index <= self.period.time_period).argmin() - 1
+            self.current_candles[ticker] = candles_df.iloc[self.last_candles_idx[ticker]].to_dict()
+
+        for ticker in self.candle_data.keys():
+            LocalTSUploader.candles_in_memory[ticker] = \
+                self.candle_data[ticker].iloc[:self.last_candles_idx[ticker] + 1]
+
+            LocalTSUploader.last_candles[ticker] = \
+                self.candle_data[ticker].iloc[self.last_candles_idx[ticker]:self.last_candles_idx[ticker] + 1]
+
+            LocalTSUploader.candles_start_dates[ticker] = \
+                self.period.time_period + timedelta(minutes=1)
+
+    def __enter__(self):
+        self.services = MockClientServices(self)
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        return False
+
+    def next_period(self):
+        for order in self.services.orders.order_history:
+            ticker = self.uid_to_tickers[order.instrument_id]
+
+            if (self.period.instrument_session[ticker.type_instrument]
+                    == SessionPeriod.CLOSED):
+                continue
+
+            if order.status == OrderExecutionReportStatus.EXECUTION_REPORT_STATUS_NEW:
+                p = round(order.price, 9)
+                mid = (round(Decimal(self.current_candles[ticker]['high']), 9)
+                       + round(Decimal(self.current_candles[ticker]['low']), 9) ) / 2
+
+                if self.buy_price_end_period == 'mid':
+                    p_buy = mid
+                else:
+                    p_buy = round(Decimal(self.current_candles[ticker][self.buy_price_end_period]), 9)
+
+                if self.sell_price_end_period == 'mid':
+                    p_sell = mid
+                else:
+                    p_sell = round(Decimal(self.current_candles[ticker][self.sell_price_end_period]), 9)
+
+                if self.market_order_price == 'mid':
+                    p_market = mid
+                else:
+                    p_market = round(Decimal(self.current_candles[ticker][self.market_order_price]), 9)
+
+                if order.order_type == OrderType.ORDER_TYPE_LIMIT:
+                    if ((order.direction == OrderDirection.ORDER_DIRECTION_BUY and p >= p_buy)
+                            or (order.direction == OrderDirection.ORDER_DIRECTION_SELL and p <= p_sell)):
+                        order.status = OrderExecutionReportStatus.EXECUTION_REPORT_STATUS_FILL
+                        order.executed_order_price = p
+                        order.lots_executed = order.quantity
+                        order.executed_commission = Decimal(0)
+                        order.total_order_amount = order.quantity * p * ticker.lot
+
+                        self._cash += float(order.quantity * p * ticker.lot
+                                            * (-1 if order.direction == OrderDirection.ORDER_DIRECTION_BUY else 1))
+                elif order.order_type == OrderType.ORDER_TYPE_MARKET:
+                    order.status = OrderExecutionReportStatus.EXECUTION_REPORT_STATUS_FILL
+                    order.executed_order_price = p_market
+                    order.lots_executed = order.quantity
+                    order.executed_commission = Decimal(0)
+                    order.total_order_amount = order.quantity * p_market * ticker.lot
+
+                    self._cash += float(order.quantity * p_market * ticker.lot
+                                        * (-1 if order.direction == OrderDirection.ORDER_DIRECTION_BUY else 1))
+
+        for ticker, candles_df in self.candle_data.items():
+            if self.period.instrument_session[ticker.type_instrument] == SessionPeriod.CLOSED:
+                continue
+
+            self.last_candles_idx[ticker] += 1
+            self.current_candles[ticker] = candles_df.iloc[self.last_candles_idx[ticker]].to_dict()
+
+        self.period.next_period(update_with_cur_time=False)
+
+    def get_account(self, account_type):
+        return MockUsers(self.services).account
+
+    def get_available_balance(self, account):
+        return self._cash
+
+    @abstractmethod
     def ready_to_trade(self, sessions, types_instruments,
                        include_opening=True, include_closing=True):
-        for type_instrument in types_instruments:
-            if not self.period.instrument_session[type_instrument] in sessions:
-                return False
-            elif self.period.instrument_auction[type_instrument] == SessionAuction.OPENING and not include_opening:
-                return False
-            elif self.period.instrument_auction[type_instrument] == SessionAuction.CLOSING and not include_closing:
-                return False
-        else:
-            return True
+        pass
+
 
     @staticmethod
+    @abstractmethod
     def price_correction(price, ticker) -> Decimal:
-        return t_api.TClient.price_correction(price, ticker)
+        pass
 
     @staticmethod
+    @abstractmethod
     def lots_correction(portfolio_lots, ticker) -> int:
-        return t_api.TClient.lots_correction(portfolio_lots, ticker)
+        pass
 
 
 class MockClientServices(local_api.Services):

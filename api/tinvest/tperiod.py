@@ -57,11 +57,3 @@ class TPeriod(Period):
                         self.instrument_auction[type_instrument] = SessionAuction.CLOSING
                     else:
                         self.instrument_auction[type_instrument] = SessionAuction.TWOSIDED
-
-    def next_period(self, update_with_cur_time):
-        if not update_with_cur_time:
-            self.time_period += self.time_frequency
-        else:
-            self.time_period = datetime.now(tz=timezone.utc)
-
-        self.update_market_schedule_info()

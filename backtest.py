@@ -1,13 +1,13 @@
 from datetime import datetime, timezone, timedelta
 from api.broker_list import t_invest
 from api.tinvest.tticker import TTicker
-from engine.candles.candles_uploader import LocalCandlesUploader
+from engine.candles.candles_uploader import LocalTSUploader
 from engine.schemas.constants import model_path
 
 from main import main
 from engine.strategies.state_based import AvgState
 
-from engine.schemas.data_broker import Pipeline
+from engine.schemas.pipeline import Pipeline
 
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
@@ -18,7 +18,7 @@ from engine.models.target_processor import TargetProcessorClassifier
 from sklearn import set_config
 set_config(transform_output="pandas")
 
-LocalCandlesUploader.broker = t_invest
+LocalTSUploader.broker = t_invest
 
 train_model = False
 backtest_model = True
@@ -82,7 +82,7 @@ if __name__ == '__main__':
 
         fitted_model = pipe1.fit()
 
-        fitted_model.save_model(path_to_model)
+        fitted_model.save(path_to_model)
 
     if backtest_model:
         duration = timedelta(hours=24)

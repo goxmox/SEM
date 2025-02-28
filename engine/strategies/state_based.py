@@ -4,7 +4,7 @@ from engine.strategies.strategy import Strategy
 from engine.strategies.datatypes import LocalOrder
 from engine.schemas.enums import SessionPeriod, OrderType, OrderDirection, OrderExecutionReportStatus
 from engine.schemas.datatypes import Ticker
-from engine.schemas.data_broker import Pipeline
+from engine.schemas.pipeline import Pipeline
 from engine.transformers.returns import Returns
 import numpy as np
 
